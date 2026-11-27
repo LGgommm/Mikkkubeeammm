@@ -82,9 +82,26 @@ async function refresh() {
 async function run(fn) {
   try {if(fn) await fn(); await refresh();} catch(e){el('status').textContent=e.message;}
 }
-el('form').onsubmit=e=>{e.preventDefault();run(async()=>{
-  await api('/watch',{shop:el('shop').value,keyword:el('word').value}); el('word').value='';
-});};
+el('form').onsubmit=async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  if(form.dataset.saving) return;
+  const boxes=Array.from(form.querySelectorAll('input[name="shops"]:checked'));
+  const keyword=el('word').value.trim();
+  if(!keyword || !boxes.length) return;
+  const feedback=el('watch-feedback');
+  form.dataset.saving='true';
+  feedback.textContent='등록 중…';
+  try {
+    const results=await Promise.allSettled(boxes.map(box=>api('/watch',{shop:box.value,keyword})));
+    const failed=boxes.filter((box,i)=>results[i].status==='rejected');
+    feedback.textContent=failed.length
+      ? '등록 실패 · '+failed.map(box=>shops[box.value]).join(', ')+'. 다시 눌러 주세요.'
+      : boxes.map(box=>shops[box.value]).join(', ')+'에 등록했어요.';
+    if(!failed.length && el('word').value.trim()===keyword) el('word').value='';
+    await run();
+  } finally {delete form.dataset.saving;}
+};
 el('reload').onclick=async event=>{
   const control=event.currentTarget;
   control.disabled=true;
