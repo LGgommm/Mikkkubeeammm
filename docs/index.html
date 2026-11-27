@@ -8,6 +8,19 @@
 .item-title {align-self:start;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere;line-height:1.45}
 :is(#hits,#stars) strong {align-self:start;font-size:20px;color:#2477cf}
 :is(#hits,#stars) li button {position:absolute;left:5px;top:5px;margin:0;padding:4px 9px;min-height:30px;border:1px solid #ddd;border-radius:18px;background:white;color:#353535;font-size:12px;box-shadow:0 1px 4px #0002}
+
+body{padding:0 12px 24px}
+header{margin:0 -12px 14px;background:#61a5d3;padding:12px}
+header h1{margin:0 0 8px;color:white;font-size:18px}
+header form{align-items:center;flex-wrap:nowrap;padding:3px 6px;background:white;border-radius:24px}
+header form>*{margin:0;border:0;font-size:14px}
+header select{max-width:29%;background:white}
+header input{min-width:0;width:100%;background:transparent}
+header button{flex:none;background:#22648f;color:white;border-radius:18px}
+header small{margin:7px 4px 0;color:#102c40}
+#watch-settings{padding:3px 0 10px}summary{cursor:pointer}
+section{padding:10px 0;margin:8px 0}section h2{margin:0 0 5px}
+#hits:has(>li),#stars:has(>li){margin-top:8px}
 </style>
-<h1>매물 알림</h1><section><h2>키워드 설정</h2><form id="form"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><input id="word" aria-label="키워드" placeholder="예: けいおん" required maxlength="80"><button>키워드 등록</button></form><small>첫 확인 이후 새로 발견한 상품을 알려줘요.</small><ul id="watches"></ul></section>
-<section><h2>알림 목록</h2><button id="reload">새로고침</button><p id="status" role="status"></p><ul id="hits"></ul></section><section><h2>찜 목록</h2><small>이 브라우저에서 추가한 찜을 볼 수 있어요.</small><ul id="stars"></ul></section><script src="./config.js"></script><script src="./market.js"></script></html>
+<header><h1>매물 알림</h1><form id="form"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><input id="word" aria-label="키워드" placeholder="예: けいおん" required maxlength="80"><button>키워드 등록</button></form><small>첫 확인 이후 새로 발견한 상품을 알려줘요.</small></header><details id="watch-settings"><summary>등록한 키워드 관리</summary><ul id="watches"></ul></details>
+<section><h2>알림 목록</h2><button id="reload">새로고침</button><p id="status" role="status"></p><ul id="hits"></ul></section><section><h2>찜 목록</h2><small>이 브라우저에서 추가한 찜을 볼 수 있어요.</small><ul id="stars"></ul></section><script src="./config.js"></script><script src="./market.js?v=list-2"></script></html>
