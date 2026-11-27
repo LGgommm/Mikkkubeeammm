@@ -1,10 +1,16 @@
 const el = id => document.getElementById(id);
 const shops = {mercari:'메루카리',nakano:'만다라케 나카노점'};
-let key = localStorage.getItem('market-device');
-if (!key) {
-  key = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2,'0')).join('');
-  localStorage.setItem('market-device',key);
+const validDeviceKey = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const cookiePath = new URL('.', location.href).pathname;
+function saveDeviceKey(value) {
+  localStorage.setItem('market-device',value);
+  document.cookie='market_device_backup='+value+'; Path='+cookiePath+'; Max-Age=31536000; Secure; SameSite=Strict';
 }
+const storedKey=localStorage.getItem('market-device');
+const backupKey=document.cookie.split('; ').find(part=>part.startsWith('market_device_backup='))?.split('=')[1];
+let key=validDeviceKey(storedKey) ? storedKey : backupKey;
+if(!validDeviceKey(key)) key=Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,'0')).join('');
+saveDeviceKey(key);
 async function api(path, body) {
   if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
   const response = await fetch(window.MARKET_API + path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
@@ -141,3 +147,25 @@ async function setupPush() {
   } catch {status.textContent='푸시 설정을 불러오지 못했어요. 다시 열어 주세요.';}
 }
 setupPush();
+
+el('backup-key')?.addEventListener('click',async()=>{
+  const status=el('backup-status');
+  try { await navigator.clipboard.writeText(key); status.textContent='복구코드를 복사했어요. 안전한 곳에 보관하세요.'; }
+  catch {const input=el('restore-code');input.value=key;input.type='text';input.focus();input.select();status.textContent='선택된 복구코드를 복사하세요.';}
+});
+el('restore-key')?.addEventListener('click',async()=>{
+  const input=el('restore-code'), candidate=input.value.trim(), status=el('backup-status');
+  if(!validDeviceKey(candidate)){status.textContent='복구코드 64자리를 확인해 주세요.';return;}
+  try {
+    const response=await fetch(window.MARKET_API+'/state',{headers:{Authorization:'Bearer '+candidate}});
+    if(!response.ok) throw Error();
+    const data=await response.json();
+    if(!data.watches.length && !data.hits.length && !data.favorites.length){status.textContent='이 코드에 저장된 목록이 없어요.';return;}
+    if(candidate!==key && !confirm('이 브라우저에서 복구한 목록을 열까요? 현재 목록으로 돌아오려면 현재 복구코드를 보관해 주세요.')) return;
+    const reg=await navigator.serviceWorker?.getRegistration();
+    const subscription=await reg?.pushManager?.getSubscription();
+    if(candidate!==key && subscription) await subscription.unsubscribe();
+    saveDeviceKey(candidate);
+    location.reload();
+  } catch {status.textContent='목록을 확인하지 못했어요. 다시 시도해 주세요.';}
+});
