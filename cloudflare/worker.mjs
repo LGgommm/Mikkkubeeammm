@@ -44,14 +44,15 @@ async function encryptPush(keys, payload) {
   const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,concat(utf8(JSON.stringify(payload)),Uint8Array.of(2)));
   return concat(salt,Uint8Array.of(0,0,16,0,65),as,new Uint8Array(cipher));
 }
-async function deliver(db, device, testId=null) {
+async function deliver(db, device, testId=null, checkKeys=null) {
   const id = await identity(db);
   const signer = await crypto.subtle.importKey('jwk',JSON.parse(id.jwk),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const claims = {aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'https://lggommm.github.io/Mikkkubeeammm/'};
   const message = encode('{"typ":"JWT","alg":"ES256"}')+'.'+encode(JSON.stringify(claims));
   const sig = await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},signer,new TextEncoder().encode(message));
-  const keys=await db.prepare('SELECT p256dh,auth FROM push_keys WHERE endpoint=?').bind(device.endpoint).first();
+  const keys=checkKeys || await db.prepare('SELECT p256dh,auth FROM push_keys WHERE endpoint=?').bind(device.endpoint).first();
   const body=keys ? await encryptPush(keys,testId ? {testId,title:'시험 알림',body:'이 기기에서 매물 푸시를 받을 수 있어요.'} : {title:'새 매물 알림',body:'등록한 키워드의 새 매물이 도착했어요.'}) : undefined;
+  if(checkKeys) return {bytes:body.byteLength,signature:sig.byteLength};
   const response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});
   if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
   else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
@@ -77,6 +78,13 @@ export default {async fetch(req, env) {
   const sql = (query,...params) => env.DB.prepare(query).bind(...params);
   if (path.startsWith('/collector/')) {
     if (!env.COLLECTOR_TOKEN || key !== env.COLLECTOR_TOKEN) return reply({},403);
+    if (path==='/collector/push-check') {
+      try {
+        const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+        const keys={p256dh:b64(await crypto.subtle.exportKey('raw',pair.publicKey)),auth:b64(crypto.getRandomValues(new Uint8Array(16)))};
+        return reply(await deliver(env.DB,{endpoint:'https://web.push.apple.com/test'},'check',keys));
+      } catch(e) {return reply({error:e.name,description:String(e.message).slice(0,180)});}
+    }
     if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT id,shop,keyword FROM watches WHERE active=1').all()).results);
