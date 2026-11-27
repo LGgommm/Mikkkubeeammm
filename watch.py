@@ -51,7 +51,7 @@ def nakano():
     response = requests.get(NAKANO_LIST, headers={'User-Agent': 'MarketAlerts/1.0'}, timeout=25)
     response.raise_for_status()
     if urlsplit(response.url).path != '/order/listPage/list':
-        raise ValueError('Nakano listing redirected away from the catalogue')
+        raise ValueError('Nakano listing redirected to ' + urlsplit(response.url).netloc + urlsplit(response.url).path)
     parser = ListingParser()
     parser.feed(response.content.decode('utf-8', errors='replace'))
     if not parser.rows:
