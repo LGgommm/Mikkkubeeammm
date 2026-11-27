@@ -78,3 +78,43 @@ el('form').onsubmit=e=>{e.preventDefault();run(async()=>{
 el('reload').onclick=()=>run();
 run();
 setInterval(()=>{if(!document.hidden) run();},60000);
+
+async function setupPush() {
+  const enable=el('enable-push'), test=el('test-push'), status=el('push-status');
+  if(!enable) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    status.textContent='아이폰은 Safari에서 홈 화면에 추가한 뒤 홈 화면 아이콘으로 열어 주세요.';
+    return;
+  }
+  try {
+    await navigator.serviceWorker.register('./sw.js');
+    const reg=await navigator.serviceWorker.ready;
+    const {key:publicKey}=await api('/push/key');
+    const raw=Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')+'='),c=>c.charCodeAt(0));
+    async function connected(sub) {
+      await api('/push/subscribe',{endpoint:sub.endpoint});
+      enable.hidden=true;
+      test.hidden=false;
+      status.textContent='이 기기에서 새 매물 푸시를 받아요.';
+      test.onclick=async()=>{
+        test.disabled=true;
+        try {await api('/push/test',{endpoint:sub.endpoint});status.textContent='시험 알림을 발송했어요.';}
+        catch {status.textContent='시험 알림 발송에 실패했어요. 알림 권한을 확인해 주세요.';}
+        finally {test.disabled=false;}
+      };
+    }
+    const sub=await reg.pushManager.getSubscription();
+    if(sub) return await connected(sub);
+    enable.hidden=false;
+    enable.onclick=async()=>{
+      enable.disabled=true;
+      try {
+        const permission=await Notification.requestPermission();
+        if(permission!=='granted') throw Error('기기 설정에서 매물 알림을 허용해 주세요.');
+        await connected(await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:raw}));
+      } catch(e){status.textContent=e.message;}
+      finally {enable.disabled=false;}
+    };
+  } catch {status.textContent='푸시 설정을 불러오지 못했어요. 다시 열어 주세요.';}
+}
+setupPush();
