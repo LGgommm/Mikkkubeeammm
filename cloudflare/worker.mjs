@@ -1,3 +1,37 @@
+const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+const encode = text => b64(new TextEncoder().encode(text));
+async function identity(db) {
+  const read = () => db.prepare('SELECT * FROM push_identity WHERE id=1').first();
+  const existing = await read();
+  if (existing) return existing;
+  const pair = await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+  const jwk = await crypto.subtle.exportKey('jwk',pair.privateKey);
+  const raw = await crypto.subtle.exportKey('raw',pair.publicKey);
+  await db.prepare('INSERT OR IGNORE INTO push_identity VALUES(1,?,?)').bind(JSON.stringify(jwk),b64(raw)).run();
+  return read();
+}
+function allowedEndpoint(value) {
+  try {
+    const u = new URL(value);
+    return u.protocol==='https:' && !u.username && !u.password && !u.port && u.pathname.length>1 &&
+      (u.hostname==='web.push.apple.com' || u.hostname.endsWith('.push.apple.com') || u.hostname==='fcm.googleapis.com' || u.hostname.endsWith('.push.services.mozilla.com'));
+  } catch { return false; }
+}
+async function deliver(db, device) {
+  const id = await identity(db);
+  const signer = await crypto.subtle.importKey('jwk',JSON.parse(id.jwk),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
+  const claims = {aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'https://lggommm.github.io/Mikkkubeeammm/'};
+  const message = encode('{"typ":"JWT","alg":"ES256"}')+'.'+encode(JSON.stringify(claims));
+  const sig = await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},signer,new TextEncoder().encode(message));
+  const response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body:new Uint8Array(0)});
+  if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
+  else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
+  return response.ok;
+}
+async function drain(db) {
+  const devices = await db.prepare('SELECT * FROM push_devices WHERE pending>0 ORDER BY RANDOM() LIMIT 12').all();
+  await Promise.allSettled(devices.results.map(device=>deliver(db,device)));
+}
 const origin = 'https://lggommm.github.io';
 function reply(data, status = 200) {
   return Response.json(data, {status, headers:{
@@ -14,6 +48,7 @@ export default {async fetch(req, env) {
   const sql = (query,...params) => env.DB.prepare(query).bind(...params);
   if (path.startsWith('/collector/')) {
     if (!env.COLLECTOR_TOKEN || key !== env.COLLECTOR_TOKEN) return reply({},403);
+    if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT id,shop,keyword FROM watches WHERE active=1').all()).results);
     if (path === '/collector/results' && req.method === 'POST') {
@@ -21,12 +56,27 @@ export default {async fetch(req, env) {
       if (!Array.isArray(rows)) return reply({},400);
       const insert = rows.map(([url,title]) => sql('INSERT OR IGNORE INTO matches(watch_id,url,title,visible) SELECT id,?,?,initialized FROM watches WHERE id=? AND active=1',url,title,id));
       await env.DB.batch([...insert,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
+      await drain(env.DB);
       return reply({});
     }
     return reply({},404);
   }
   if (!/^[a-f0-9]{64}$/.test(key)) return reply({},401);
   const owner = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))), b=>b.toString(16).padStart(2,'0')).join('');
+  if(path==='/push/key') return reply({key:(await identity(env.DB)).public_key});
+  if(path.startsWith('/push/') && req.method==='POST') {
+    const {endpoint} = await req.json();
+    if(!allowedEndpoint(endpoint)) return reply({},400);
+    if(path==='/push/subscribe') {
+      await sql('INSERT OR IGNORE INTO push_devices(endpoint,owner) VALUES(?,?)',endpoint,owner).run();
+      return reply({});
+    }
+    if(path==='/push/test') {
+      const device=await sql('SELECT * FROM push_devices WHERE endpoint=? AND owner=?',endpoint,owner).first();
+      return device && await deliver(env.DB,{...device,pending:0}) ? reply({}) : reply({},502);
+    }
+    return reply({},404);
+  }
   if (path === '/auction-card' && req.method === 'GET') {
     const id = new URL(req.url).searchParams.get('id');
     if (!/^\d{1,12}$/.test(id || '')) return reply({},400);
