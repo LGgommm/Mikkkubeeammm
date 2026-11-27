@@ -34,7 +34,25 @@ jobs:
           with open(os.environ["GITHUB_ENV"],"a") as out:
               print("MARKET_API="+url,"COLLECTOR_TOKEN="+key,sep="\n",file=out)
           CODE
-      - run: python watch.py
+      - name: Collect active watches every minute
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          import time
+
+          start = time.monotonic()
+          failed = False
+          for slot in range(5):
+              remaining = start + slot * 60 - time.monotonic()
+              if remaining <= -60:
+                  continue
+              time.sleep(max(0, remaining))
+              print(f"Starting collection {slot + 1}/5", flush=True)
+              result = subprocess.run([sys.executable, "watch.py"])
+              failed |= result.returncode != 0
+          sys.exit(int(failed))
+          PY
       - name: Check live collection and web app results
         if: github.event_name == 'push'
         run: |
