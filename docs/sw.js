@@ -1,5 +1,14 @@
 self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate',event=>event.waitUntil(clients.claim()));
+// Revalidate the app shell when an installed app or a browser tab opens it.
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
+  const scope = new URL(self.registration.scope);
+  if (request.mode !== 'navigate' || url.origin !== scope.origin ||
+      ![scope.pathname, scope.pathname + 'index.html'].includes(url.pathname)) return;
+  event.respondWith(fetch(request, {cache: 'no-cache'}).catch(() => fetch(request)));
+});
 self.addEventListener('push',event=>{
   let data={};
   try { data=event.data?.json() || {}; } catch {}
