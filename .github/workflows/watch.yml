@@ -18,7 +18,17 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install mercapi==0.5.0 requests
-      - run: python watch.py
+      - name: Prepare collector credentials
         env:
-          MARKET_API: ${{ vars.MARKET_API }}
-          COLLECTOR_TOKEN: ${{ secrets.COLLECTOR_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          python - <<'CODE'
+          import os, json, hashlib, hmac
+          from pathlib import Path
+          key = hmac.new(os.environ["DEPLOY_KEY"].strip().encode(), b"market-alert-collector-v1", hashlib.sha256).hexdigest()
+          print("::add-mask::" + key)
+          url = json.loads(Path("docs/config.js").read_text().split("=",1)[1].strip().rstrip(";"))
+          with open(os.environ["GITHUB_ENV"],"a") as out:
+              print("MARKET_API="+url,"COLLECTOR_TOKEN="+key,sep="\n",file=out)
+          CODE
+      - run: python watch.py

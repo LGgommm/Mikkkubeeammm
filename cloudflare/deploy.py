@@ -1,0 +1,48 @@
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import time
+import urllib.request
+from pathlib import Path
+
+account = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip()
+token = os.environ["CLOUDFLARE_API_TOKEN"].strip()
+base = f"https://api.cloudflare.com/client/v4/accounts/{account}/"
+name = "market-alert-" + os.environ["GITHUB_REPOSITORY_ID"]
+def api(path, method="GET", data=None):
+    req = urllib.request.Request(base + path, method=method, headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"}, data=json.dumps(data).encode() if data else None)
+    with urllib.request.urlopen(req, timeout=45) as response:
+        return json.load(response)["result"]
+
+try:
+    subdomain = api("workers/subdomain").get("subdomain")
+except urllib.error.HTTPError as error:
+    if error.code != 404: raise
+    subdomain = None
+if not subdomain:
+    subdomain = name
+    api("workers/subdomain","PUT",{"subdomain":subdomain})
+db = next((d for d in api("d1/database?name="+name) if d["name"]==name),None)
+if not db:
+    db = api("d1/database","POST",{"name":name})
+config = Path("cloudflare/wrangler.json")
+config.write_text(json.dumps({"name":name,"main":"worker.mjs","compatibility_date":"2025-06-01","workers_dev":True,"d1_databases":[{"binding":"DB","database_name":name,"database_id":db["uuid"]}]}))
+def wrangler(*args, data=None):
+    subprocess.run(["npx","--yes","wrangler@4",*args,"--config",str(config)],input=data,text=True,check=True)
+wrangler("d1","execute",name,"--remote","--file","cloudflare/schema.sql")
+wrangler("deploy")
+key = hmac.new(token.encode(),b"market-alert-collector-v1",hashlib.sha256).hexdigest()
+wrangler("secret","put","COLLECTOR_TOKEN",data=key)
+url = f"https://{name}.{subdomain}.workers.dev"
+for attempt in range(15):
+    try:
+        req = urllib.request.Request(url+"/collector/watches",headers={"Authorization":"Bearer "+key})
+        with urllib.request.urlopen(req,timeout=15) as response:
+            assert isinstance(json.load(response),list)
+        break
+    except OSError:
+        if attempt==14: raise
+        time.sleep(4)
+Path("docs/config.js").write_text("window.MARKET_API = "+json.dumps(url)+";\n")
