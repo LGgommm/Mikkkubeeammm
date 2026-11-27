@@ -3,6 +3,7 @@ import json
 import os
 import re
 import unicodedata
+from decimal import Decimal, ROUND_HALF_UP
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlsplit
 
@@ -122,6 +123,7 @@ async def run():
     failed = False
     feed = None
     auction_prices = {}
+    won_per_yen = None
     for watch in response.json():
         shop, word = watch['shop'], watch['keyword']
         try:
@@ -133,6 +135,16 @@ async def run():
                     feed = nakano()
                 rows = [r for r in feed if normalize(word) in normalize(r[1])]
             low, high = watch.get('min_yen'), watch.get('max_yen')
+            krw = watch.get('max_krw') is not None
+            if krw:
+                low, high = watch['min_krw'], watch['max_krw']
+                if won_per_yen is None:
+                    quote = requests.get('https://api.frankfurter.dev/v1/latest', params={'base': 'JPY', 'symbols': 'KRW'}, timeout=15)
+                    quote.raise_for_status()
+                    won_per_yen = Decimal(str(quote.json()['rates']['KRW']))
+                    if not won_per_yen.is_finite() or won_per_yen <= 0:
+                        won_per_yen = None
+                        raise ValueError('Invalid JPY/KRW exchange rate')
             if low is not None or high is not None:
                 filtered = []
                 for url, title in rows:
@@ -154,6 +166,8 @@ if __name__ == '__main__':
                             price = re.fullmatch(r'([\d,]+)円', card.json().get('price') or '')
                             auction_prices[url] = int(price[1].replace(',', '')) if price else None
                         amount = auction_prices[url]
+                    if krw and amount is not None:
+                        amount = (amount * won_per_yen).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
                     if amount is not None and (low is None or amount >= low) and (high is None or amount <= high):
                         filtered.append([url, title])
                 rows = filtered

@@ -76,11 +76,12 @@
   .shop-picker { display:grid; place-items:center; width:36px; height:34px; min-height:0; flex:none; border:0; padding:0; color:var(--ink); background:transparent; -webkit-tap-highlight-color:transparent; }
   .shop-picker:focus { outline:0; box-shadow:none; }
   .shop-picker:focus-visible { color:var(--blue); }
-  #shop-menu { position:absolute; top:calc(100% + 5px); left:0; z-index:2; width:min(258px,100%); padding:6px; border-radius:20px; background:var(--card); box-shadow:0 4px 22px #0004,0 0 0 1px var(--fill); }
-  #shop-menu label { cursor:pointer; min-height:44px; font-weight:500; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:6px 10px; background:transparent; color:var(--ink); }
-  #shop-menu label:active { background:var(--fill); }
+  #shop-menu { position:absolute; top:calc(100% + 5px); left:0; z-index:2; }
+  :is(#shop-menu,#edit-shops) { width:min(258px,100%); padding:6px; border-radius:20px; background:var(--card); box-shadow:0 4px 22px #0004,0 0 0 1px var(--fill); }
+  :is(#shop-menu,#edit-shops) label { cursor:pointer; min-height:44px; font-weight:500; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:6px 10px; background:transparent; color:var(--ink); }
+  :is(#shop-menu,#edit-shops) label:active { background:var(--fill); }
   .store-icon { flex:none; width:24px; height:24px; object-fit:contain; border-radius:6px; }
-  #shop-menu input[type="checkbox"] { appearance:auto; flex:none; min-height:0; width:18px; height:18px; margin:0 0 0 auto; accent-color:var(--blue); }
+  :is(#shop-menu,#edit-shops) input[type="checkbox"] { appearance:auto; flex:none; min-height:0; width:18px; height:18px; margin:0 0 0 auto; accent-color:var(--blue); }
   @media (prefers-reduced-motion:no-preference) {
     #shop-menu:not([hidden]) { animation:shop-appear 150ms ease-out; transform-origin:top left; }
     @keyframes shop-appear { from { opacity:0; transform:translateY(-3px) scale(.97); } to { opacity:1; transform:none; } }
@@ -93,10 +94,10 @@
   .watch-panel.expanded { grid-template-rows:1fr; }
   .panel-body { overflow:hidden; min-height:0; }
   #keyword-dialog #editor-form { display:grid; margin:0; padding:6px 2px; gap:6px; background:transparent; border-radius:0; }
-  #edit-shops label, #edit-prices label { display:flex; gap:8px; align-items:center; font-size:14px; font-weight:500; }
-  #edit-shops label { min-height:36px; }
-  #edit-shops input { flex:none; width:18px; height:18px; min-height:0; accent-color:var(--blue); }
-  #edit-prices label input { width:0; padding:2px 8px; background:var(--card); }
+  #edit-shops { margin:2px; max-width:calc(100% - 4px); }
+  .price-values { display:flex; align-items:baseline; justify-content:flex-start; gap:5px; font-size:15px; font-weight:600; }
+  #keyword-dialog .price-values input { flex:none; min-width:2ch; max-width:11ch; min-height:32px; padding:0; font:inherit; font-variant-numeric:tabular-nums; border-radius:0; }
+  #keyword-dialog .price-values input:focus { outline:none; border-bottom:1px solid var(--blue); }
   #editor-form footer { display:flex; justify-content:flex-end; gap:6px; }
   #watches #editor-form footer button { width:auto; padding:4px 12px; border-radius:999px; }
   .price-track { position:relative; height:36px; margin:4px 8px; }
@@ -146,14 +147,17 @@
 <div id="editor-parking" hidden>
   <form id="editor-form">
   
-    <div id="edit-shops"><label><input type="checkbox" value="mercari">메루카리</label><label><input type="checkbox" value="nakano">만다라케 나카노점</label></div>
-    <div id="edit-prices"><div class="price-track"><input type="range" id="range-low" aria-label="최저가 조절"><input type="range" id="range-high" aria-label="최고가 조절"></div><label>최소 가격 (엔)<input id="min-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label><label>최대 가격 (엔)<input id="max-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label></div>
+    <div id="edit-shops" role="group" aria-label="검색할 상점"></div>
+    <div id="edit-prices">
+      <div class="price-values"><input id="min-won" inputmode="numeric" aria-label="최소 가격 직접 입력" autocomplete="off"> ~ <input id="max-won" inputmode="numeric" aria-label="최대 가격 직접 입력" autocomplete="off"> 원</div>
+      <div class="price-track"><input type="range" min="0" max="1000000" step="5000" id="range-low" aria-label="최저가 조절"><input type="range" min="0" max="1000000" step="5000" id="range-high" aria-label="최고가 조절"></div>
+    </div>
     <small id="editor-status" role="status"></small>
     <footer><button type="button" id="editor-cancel">취소</button><button type="submit">저장</button></footer>
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=inline-range"></script>
+<script src="./config.js"></script><script src="./market.js?v=won-prices"></script>
 <script>
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');

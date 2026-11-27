@@ -81,6 +81,11 @@ function watchControl(label, path, action) {
   return control;
 }
 const form=el('editor-form');
+for(const row of el('shop-menu').querySelectorAll('label')) {
+  const copy=row.cloneNode(true);
+  copy.querySelector('input').removeAttribute('name');
+  el('edit-shops').append(copy);
+}
 let editing;
 function foldEditor() {
   if(!editing) return;
@@ -89,25 +94,38 @@ function foldEditor() {
   editing.panel.inert=true;
   editing=null;
 }
-function syncRanges() {
-  const low=el('min-yen'), high=el('max-yen');
-  const end=Math.max(100000,Number(low.value)||0,Number(high.value)||0)+1;
-  const a=el('range-low'), b=el('range-high');
-  a.max=end; b.max=end;
-  a.value=low.value || 0; b.value=high.value || end;
-  a.parentNode.style.setProperty('--lo',(100*a.value/end)+'%');
-  a.parentNode.style.setProperty('--hi',(100*b.value/end)+'%');
-  a.style.zIndex=Number(b.value)===end && Number(a.value)>end/2?'1':'';
+const priceLimit=1000000;
+const money=n=>n.toLocaleString('ko-KR');
+function amount(id) {
+  const raw=el(id).value.replaceAll(',','').trim();
+  return /^\d+$/.test(raw)?Number(raw):NaN;
 }
-for(const id of ['min-yen','max-yen']) el(id).oninput=syncRanges;
+function syncRanges() {
+  const a=el('range-low'), b=el('range-high');
+  const min=amount('min-won'), max=amount('max-won');
+  if(Number.isFinite(min)) a.value=String(min);
+  if(Number.isFinite(max)) b.value=String(max);
+  a.parentNode.style.setProperty('--lo',(100*a.value/priceLimit)+'%');
+  a.parentNode.style.setProperty('--hi',(100*b.value/priceLimit)+'%');
+  a.style.zIndex=Number(a.value)===Number(b.value) && Number(b.value)>0?'1':'';
+  for(const id of ['min-won','max-won']) el(id).style.width=Math.max(2,el(id).value.length+.5)+'ch';
+}
+for(const id of ['min-won','max-won']) {
+  const input=el(id);
+  input.onfocus=()=>{input.value=input.value.replaceAll(',','');input.select();};
+  input.oninput=syncRanges;
+  input.onblur=()=>{const n=amount(id);if(Number.isSafeInteger(n)) input.value=money(n);syncRanges();};
+}
 el('range-low').oninput=event=>{
-  const value=Math.min(+event.target.value,+el('range-high').value);
-  el('min-yen').value=value || '';
+  const ceiling=amount('max-won');
+  const n=Math.min(+event.target.value,Number.isFinite(ceiling)?Math.floor(ceiling/5000)*5000:priceLimit);
+  el('min-won').value=money(Math.max(0,n));
   syncRanges();
 };
 el('range-high').oninput=event=>{
-  const value=Math.max(+event.target.value,+el('range-low').value);
-  el('max-yen').value=value===+event.target.max?'':value;
+  const floor=amount('min-won');
+  const n=Math.max(+event.target.value,Number.isFinite(floor)?Math.ceil(floor/5000)*5000:0);
+  el('max-won').value=money(Math.min(priceLimit,n));
   syncRanges();
 };
 function editKeyword(keyword,rows,mode,panel,button) {
@@ -129,9 +147,10 @@ function editKeyword(keyword,rows,mode,panel,button) {
   el('edit-shops').hidden=price;
   el('edit-prices').hidden=!price;
   for(const box of el('edit-shops').querySelectorAll('input')) box.checked=rows.some(row=>row.shop===box.value);
-  el('min-yen').value=rows[0].min_yen??'';
-  el('max-yen').value=rows[0].max_yen??'';
-  el('editor-status').textContent='';
+  el('min-won').value=money(rows[0].min_krw??0);
+  el('max-won').value=money(rows[0].max_krw??priceLimit);
+  const legacy=rows[0].min_yen!=null || rows[0].max_yen!=null;
+  el('editor-status').textContent=price && legacy?'기존 조건: '+(rows[0].min_yen??0)+' ~ '+(rows[0].max_yen??'제한 없음')+'엔. 저장하면 원화 조건으로 바뀌어요.':'';
   syncRanges();
   void panel.offsetHeight;
   panel.classList.add('expanded');
@@ -150,10 +169,10 @@ el('editor-form').onsubmit=async event=>{
   save.disabled=true;
   try {
     if(mode==='price') {
-      const value=id=>el(id).value===''?null:el(id).valueAsNumber;
-      const min=value('min-yen'), max=value('max-yen');
-      if(min!==null && max!==null && min>max) throw Error('최대 가격은 최소 가격 이상이어야 해요.');
-      await api('/keyword-price',{keyword,min,max});
+      const min=amount('min-won'), max=amount('max-won');
+      if(![min,max].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=priceLimit)) throw Error('0원부터 1,000,000원 사이의 금액을 입력해 주세요.');
+      if(min>max) throw Error('최대 가격은 최소 가격 이상이어야 해요.');
+      await api('/keyword-price',{keyword,min,max,currency:'KRW'});
     } else {
       const shops=Array.from(el('edit-shops').querySelectorAll(':checked'),box=>box.value);
       if(!shops.length) throw Error('상점을 하나 이상 선택해 주세요.');
