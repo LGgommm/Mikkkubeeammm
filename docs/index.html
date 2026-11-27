@@ -29,6 +29,15 @@
   #add-keyword { flex:none; width:44px; height:44px; padding:0; border:1px solid var(--fill); border-radius:50%; display:grid; place-items:center; background:var(--card); color:var(--ink); }
   #keyword-dialog { width:min(420px,calc(100% - 32px)); max-height:80dvh; overflow:auto; border:0; border-radius:22px; padding:20px; background:var(--card); color:var(--ink); }
   #keyword-dialog::backdrop { background:rgb(0 0 0 / 48%); }
+  @media (prefers-reduced-motion: no-preference) {
+    #keyword-dialog[open] { animation: keyword-enter 200ms ease-out; }
+    #keyword-dialog[open]::backdrop { animation: keyword-dim 200ms ease-out; }
+    @keyframes keyword-enter {
+      from { opacity:0; transform:translateY(10px); }
+      to { opacity:1; transform:translateY(0); }
+    }
+    @keyframes keyword-dim { from { opacity:0; } to { opacity:1; } }
+  }
   #keyword-dialog label { display:block; font-weight:650; }
   #keyword-dialog input { flex:0 0 100%; width:100%; }
   #keyword-dialog form { margin:8px 0 20px; }
