@@ -3,11 +3,8 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
-  issues:
-    types: [opened, reopened]
 permissions:
   contents: read
-  issues: write
 concurrency:
   group: market-watch
   cancel-in-progress: false
@@ -23,4 +20,5 @@ jobs:
       - run: pip install mercapi==0.5.0 requests
       - run: python watch.py
         env:
-          GH_TOKEN: ${{ github.token }}
+          MARKET_API: ${{ vars.MARKET_API }}
+          COLLECTOR_TOKEN: ${{ secrets.COLLECTOR_TOKEN }}

@@ -1,74 +1,44 @@
-const repo = 'LGgommm/Mikkkubeeammm';
-const web = 'https://github.com/' + repo;
 const el = id => document.getElementById(id);
-const favorites = new Map(JSON.parse(localStorage.getItem('market-stars') || '[]'));
-let hits = [];
-function link(text, url) {
-  const a = document.createElement('a');
-  a.textContent = text;
-  a.href = url;
-  return a;
+const shops = {mercari:'메루카리',nakano:'만다라케 나카노점'};
+let key = localStorage.getItem('market-device');
+if (!key) {
+  key = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2,'0')).join('');
+  localStorage.setItem('market-device',key);
 }
-function render(id, rows, empty) {
-  const nodes = rows.map(([url, title]) => {
-    const li = document.createElement('li');
-    const button = document.createElement('button');
-    button.textContent = favorites.has(url) ? '찜 해제' : '찜';
-    button.onclick = () => {
-      if (favorites.has(url)) favorites.delete(url);
-      else favorites.set(url, title);
-      localStorage.setItem('market-stars', JSON.stringify([...favorites]));
-      draw();
-    };
-    li.append(link(title, url), ' ', button);
-    return li;
-  });
-  el(id).replaceChildren(...(nodes.length ? nodes : [empty]));
+async function api(path, body) {
+  if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
+  const response = await fetch(window.MARKET_API + path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
+  if (!response.ok) throw Error('요청을 처리하지 못했어요 ('+response.status+').');
+  return response.json();
 }
-function draw() {
-  render('hits', hits, '새로 발견한 매물이 없어요.');
-  render('stars', [...favorites], '찜한 상품이 없어요.');
+function button(label, fn) {
+  const btn = document.createElement('button');
+  btn.textContent = label;
+  btn.onclick = () => run(fn);
+  return btn;
 }
-el('form').onsubmit = event => {
-  event.preventDefault();
-  const word = el('word').value.trim();
-  if (word) location.href = web + '/issues/new?' + new URLSearchParams({title:'[' + el('shop').value + '] ' + word, body:'이 키워드의 새 매물 알림을 받습니다.'});
-};
-async function read(path) {
-  let url = 'https://api.github.com/repos/' + repo + path;
-  const rows = [];
-  while (url) {
-    const response = await fetch(url);
-    if (!response.ok) throw Error('GitHub 목록을 불러오지 못했어요 (' + response.status + ').');
-    rows.push(...await response.json());
-    url = (response.headers.get('Link') || '').match(/<([^>]+)>; rel="next"/)?.[1];
-  }
-  return rows;
+function list(id,rows,make,empty) {
+  el(id).replaceChildren(...(rows.length?rows.map(row=>{
+    const li=document.createElement('li'); li.append(...make(row)); return li;
+  }):[empty]));
+}
+function product(row) {
+  const a=document.createElement('a'); a.href=row.url; a.textContent=row.title; return a;
 }
 async function refresh() {
-  el('reload').disabled = true;
-  try {
-    const [issues, comments] = await Promise.all([read('/issues?state=all&per_page=100'), read('/issues/comments?per_page=100&sort=created&direction=desc')]);
-    const tracked = new Map(issues.filter(i => !i.pull_request && /^\[(메루카리|만다라케)\] /.test(i.title) && ['OWNER','MEMBER','COLLABORATOR'].includes(i.author_association)).map(i => [i.url,i]));
-    el('watches').replaceChildren(...[...tracked.values()].filter(i => i.state === 'open').map(i => {
-      const li = document.createElement('li');
-      li.append(link(i.title, i.html_url));
-      return li;
-    }));
-    const found = new Map();
-    for (const c of comments) {
-      const issue = tracked.get(c.issue_url);
-      if (!issue || c.user.login !== 'github-actions[bot]' || !c.body.startsWith('<!--market-v1:')) continue;
-      const record = JSON.parse(c.body.split('\n')[0].slice('<!--market-v1:'.length,-3));
-      for (const [url,title] of record.items) if (!found.has(url)) found.set(url, issue.title + ' · ' + title);
-    }
-    hits = [...found];
-    draw();
-    el('status').textContent = '목록 확인 ' + new Date().toLocaleTimeString();
-  } catch (e) { el('status').textContent = e.message; }
-  finally { el('reload').disabled = false; }
+  const {watches,hits,favorites}=await api('/state');
+  const saved=new Set(favorites.map(row=>row.url));
+  list('watches',watches,w=>[shops[w.shop]+' / '+w.keyword+' · '+(w.active?(w.initialized?'수집 중':'첫 수집 대기'):'중지'),button(w.active?'중지':'재개',()=>api('/toggle',{id:w.id,active:!w.active})),button('삭제',()=>confirm('이 키워드와 관련 알림을 삭제할까요?') && api('/delete',{id:w.id}))],'등록한 키워드가 없어요.');
+  list('hits',hits,r=>[shops[r.shop]+' / '+r.keyword+' ',product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.');
+  list('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.');
+  el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }
-draw();
-el('reload').onclick = refresh;
-refresh();
-setInterval(() => { if (!document.hidden && !el('reload').disabled) refresh(); }, 300000);
+async function run(fn) {
+  try {if(fn) await fn(); await refresh();} catch(e){el('status').textContent=e.message;}
+}
+el('form').onsubmit=e=>{e.preventDefault();run(async()=>{
+  await api('/watch',{shop:el('shop').value,keyword:el('word').value}); el('word').value='';
+});};
+el('reload').onclick=()=>run();
+run();
+setInterval(()=>{if(!document.hidden) run();},300000);
