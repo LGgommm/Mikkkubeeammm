@@ -56,6 +56,17 @@
   .page-track > section { flex:0 0 100%; min-width:0; scroll-snap-align:start; scroll-snap-stop:always; }
   .page-track > section[inert] { max-height:32vh; overflow:hidden; }
 </style>
+<style>
+  button, #keyword-dialog select { border-radius:999px; }
+  svg { stroke-linecap:round; stroke-linejoin:round; }
+  summary { display:flex; align-items:center; gap:8px; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  .chevron { flex:none; color:var(--sub); }
+  details[open] > summary .chevron, .shop-picker .chevron { transform:rotate(90deg); }
+  .shop-picker { position:relative; flex:1; min-width:0; }
+  #keyword-dialog .shop-picker select { appearance:none; -webkit-appearance:none; width:100%; padding-right:34px; }
+  .shop-picker .chevron { pointer-events:none; position:absolute; right:12px; top:calc(50% - 8px); }
+</style>
 <title>매물 알림</title>
 </head>
 <body>
@@ -76,14 +87,14 @@
   <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
     <input id="word" placeholder="예: けいおん" required maxlength="80">
-    <select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select>
+    <span class="shop-picker"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg></span>
     <button type="submit">키워드 등록</button>
   </form>
   <h2>등록한 키워드</h2>
   <ul id="watches"></ul>
   <button type="button" id="close-keywords">닫기</button>
 </dialog>
-<details><summary>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
+<details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
 </main>
 <script src="./config.js"></script><script src="./market.js?v=27"></script>
