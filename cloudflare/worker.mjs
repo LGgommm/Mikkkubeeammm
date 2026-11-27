@@ -53,10 +53,13 @@ async function deliver(db, device, testId=null, checkKeys=null) {
   const keys=checkKeys || await db.prepare('SELECT p256dh,auth FROM push_keys WHERE endpoint=?').bind(device.endpoint).first();
   const body=keys ? await encryptPush(keys,testId ? {testId,title:'시험 알림',body:'이 기기에서 매물 푸시를 받을 수 있어요.'} : {title:'새 매물 알림',body:'등록한 키워드의 새 매물이 도착했어요.'}) : undefined;
   if(checkKeys) return {bytes:body.byteLength,signature:sig.byteLength};
-  const response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});
+  let response;
+  try {response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
   if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
   else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
-  return {accepted:response.ok,providerStatus:response.status};
+  const detail=response.ok ? {} : await response.json().catch(()=>({}));
+  const reason=typeof detail?.reason==='string' && /^[A-Za-z]{1,60}$/.test(detail.reason) ? detail.reason : '';
+  return {accepted:response.ok,providerStatus:response.status,reason};
 }
 async function drain(db) {
   const devices = await db.prepare('SELECT * FROM push_devices WHERE pending>0 ORDER BY RANDOM() LIMIT 12').all();
@@ -117,7 +120,9 @@ export default {async fetch(req, env) {
     if(path==='/push/test') {
       const device=await sql('SELECT * FROM push_devices WHERE endpoint=? AND owner=?',endpoint,owner).first();
       if(!device) return reply({accepted:false,providerStatus:410});
-      return reply(await deliver(env.DB,{...device,pending:0},typeof testId==='string'?testId.slice(0,64):'test'));
+      try {
+        return reply(await deliver(env.DB,{...device,pending:0},typeof testId==='string'?testId.slice(0,64):'test'));
+      } catch(e) {return reply({accepted:false,stage:'prepare',error:e.name});}
     }
     return reply({},404);
   }
