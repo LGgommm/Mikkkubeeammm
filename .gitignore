@@ -1,0 +1,5 @@
+vapid.pem
+.env
+*.sqlite*
+__pycache__/
+.venv/
