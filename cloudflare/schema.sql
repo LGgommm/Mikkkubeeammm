@@ -30,3 +30,5 @@ CREATE INDEX IF NOT EXISTS push_owner ON push_devices(owner);
 CREATE TRIGGER IF NOT EXISTS queue_new_listing AFTER INSERT ON matches WHEN NEW.visible=1 BEGIN
   UPDATE push_devices SET pending=pending+1 WHERE owner=(SELECT owner FROM watches WHERE id=NEW.watch_id);
 END;
+
+CREATE TABLE IF NOT EXISTS push_keys(endpoint TEXT PRIMARY KEY REFERENCES push_devices(endpoint) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
