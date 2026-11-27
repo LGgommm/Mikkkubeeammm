@@ -307,7 +307,9 @@ async function setupPush() {
               await sub.unsubscribe();
               test.hidden=true;
               location.reload();
-            } else if(result.stage==='network') status.textContent='서버에서 푸시 서비스에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.';
+            } else if(result.stage==='empty') status.textContent='아직 수집된 매물이 없어요. 첫 수집 후 다시 눌러 주세요.';
+            else if(result.stage==='subscription') status.textContent='기기 구독을 다시 연결해 주세요.';
+            else if(result.stage==='network') status.textContent='서버에서 푸시 서비스에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.';
             else if(result.stage==='prepare') status.textContent='서버 메시지 준비 실패 ('+result.error+').';
             else status.textContent='푸시 서비스 응답: HTTP '+result.providerStatus+(result.reason?' / '+result.reason:'');
           } else if(displayed!==pendingTest) status.textContent='푸시 서비스 접수 완료 · 기기 수신 대기 중';

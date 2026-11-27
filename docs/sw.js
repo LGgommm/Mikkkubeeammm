@@ -14,7 +14,8 @@ self.addEventListener('push',event=>{
   try { data=event.data?.json() || {}; } catch {}
   event.waitUntil((async()=>{
     await self.registration.showNotification(data.title || '새 매물 알림',{
-      body:data.body || '눌러서 새 매물을 확인하세요.',tag:data.testId || 'market-alerts'
+      body:data.body || '눌러서 새 매물을 확인하세요.',tag:data.tag || data.testId || 'market-alerts',
+      ...(data.image ? {image:data.image,icon:data.image} : {}),data:{url:data.url}
     });
     if(data.testId) for(const client of await clients.matchAll({type:'window',includeUncontrolled:true}))
       client.postMessage({displayed:data.testId});
@@ -22,5 +23,10 @@ self.addEventListener('push',event=>{
 });
 self.addEventListener('notificationclick',event=>{
   event.notification.close();
-  event.waitUntil(clients.openWindow(self.registration.scope));
+  let target=self.registration.scope;
+  try {
+    const url=new URL(event.notification.data?.url);
+    if(url.protocol==='https:' && ['jp.mercari.com','order.mandarake.co.jp','ekizo.mandarake.co.jp'].includes(url.hostname)) target=url.href;
+  } catch {}
+  event.waitUntil(clients.openWindow(target));
 });
