@@ -71,10 +71,49 @@ function product(row) {
   }
   return a;
 }
+const shopLogos = new Map(Array.from(document.querySelectorAll('#shop-menu input'), box =>
+  [box.value, box.closest('label').querySelector('img').src]));
+function watchControl(label, path, action) {
+  const control = button(label, action);
+  control.setAttribute('aria-label',label);
+  control.title=label;
+  control.innerHTML='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="'+path+'"/></svg>';
+  return control;
+}
+function watchCard([keyword, rows]) {
+  const logos=document.createElement('span');
+  logos.className='watch-logos';
+  for(const shop of new Set(rows.map(row=>row.shop))) {
+    const logo=new Image();
+    logo.alt=shops[shop] || shop;
+    logo.src=shopLogos.get(shop);
+    logos.append(logo);
+  }
+  const name=document.createElement('span');
+  name.className='watch-keyword';
+  name.textContent=keyword;
+  const pause=rows.some(row=>row.active);
+  async function apply(targets, path, body) {
+    const results=await Promise.allSettled(targets.map(row=>api(path,body(row))));
+    el('watch-feedback').textContent=results.some(result=>result.status==='rejected')?'일부 상점에 반영하지 못했어요. 목록을 확인해 주세요.':'';
+  }
+  const toggle=watchControl(keyword+(pause?' 일시정지':' 재개'),pause?'M5 3v10M11 3v10':'M5 3l8 5-8 5z',
+    ()=>apply(rows.filter(row=>Boolean(row.active)===pause),'/toggle',row=>({id:row.id,active:!pause})));
+  const remove=watchControl(keyword+' 삭제','M4 4l8 8M12 4l-8 8',()=>{
+    if(confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
+      return apply(rows,'/delete',row=>({id:row.id}));
+  });
+  return [logos,name,toggle,remove];
+}
 async function refresh() {
   const {watches,hits,favorites}=await api('/state');
   const saved=new Set(favorites.map(row=>row.url));
-  list('watches',watches,w=>[shops[w.shop]+' / '+w.keyword+' · '+(w.active?(w.initialized?'수집 중':'첫 수집 대기'):'중지'),button(w.active?'중지':'재개',()=>api('/toggle',{id:w.id,active:!w.active})),button('삭제',()=>confirm('이 키워드와 관련 알림을 삭제할까요?') && api('/delete',{id:w.id}))],'등록한 키워드가 없어요.');
+  const groups=new Map();
+  for(const watch of watches) {
+    if(!groups.has(watch.keyword)) groups.set(watch.keyword,[]);
+    groups.get(watch.keyword).push(watch);
+  }
+  list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
   list('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.');
   list('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.');
   el('status').textContent='확인 '+new Date().toLocaleTimeString();

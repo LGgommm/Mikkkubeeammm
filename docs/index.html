@@ -49,16 +49,12 @@
   #current-shop { display:block; margin:0 8px 18px; }
   #keyword-dialog select { flex:1; }
   #watches { display:grid; gap:8px; list-style:none; padding:0; margin:10px 0 16px; }
-  #watches > li {
-    display:grid; grid-template-columns:minmax(0,1fr); row-gap:8px;
-    padding:12px 14px; border-radius:18px; background:var(--fill);
-    color:var(--ink); overflow-wrap:anywhere;
-  }
-  #watches > li > button {
-    grid-area:2 / 1; justify-self:start; margin:0; padding:4px 12px;
-    min-height:34px; font-size:14px; border-radius:999px; background:var(--card);
-  }
-  #watches > li > button:last-child { justify-self:end; }
+  #watches > li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:4px; padding:7px 8px; border-radius:18px; background:var(--fill); color:var(--ink); }
+  .watch-logos { display:flex; align-items:center; padding-right:4px; }
+  .watch-logos img { box-sizing:border-box; display:block; width:26px; height:26px; border-radius:50%; padding:3px; border:1px solid var(--sub); background:white; object-fit:contain; }
+  .watch-logos img + img { margin-left:-8px; }
+  .watch-keyword { overflow-wrap:anywhere; }
+  #watches button { display:grid; place-items:center; width:36px; min-height:36px; margin:0; padding:0; border-radius:50%; background:var(--card); color:var(--ink); }
   #keyword-dialog #word:focus { outline:none; box-shadow:none; }
   #keyword-dialog label[for="word"]:focus { outline:none; }
   #close-keywords { width:100%; border-radius:999px; }
@@ -128,7 +124,7 @@
 <details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=multi-shop"></script>
+<script src="./config.js"></script><script src="./market.js?v=grouped-watches"></script>
 <script>
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');
