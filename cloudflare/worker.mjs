@@ -54,7 +54,7 @@ async function deliver(db, device, testId=null, checkKeys=null) {
   const body=keys ? await encryptPush(keys,testId ? {testId,title:'시험 알림',body:'이 기기에서 매물 푸시를 받을 수 있어요.'} : {title:'새 매물 알림',body:'등록한 키워드의 새 매물이 도착했어요.'}) : undefined;
   if(checkKeys) return {bytes:body.byteLength,signature:sig.byteLength};
   let response;
-  try {response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
+  try {response = await fetch(device.endpoint,{method:'POST',redirect:'manual',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
   if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
   else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
   const detail=response.ok ? {} : await response.json().catch(()=>({}));
@@ -85,7 +85,12 @@ export default {async fetch(req, env) {
       try {
         const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
         const keys={p256dh:b64(await crypto.subtle.exportKey('raw',pair.publicKey)),auth:b64(crypto.getRandomValues(new Uint8Array(16)))};
-        return reply(await deliver(env.DB,{endpoint:'https://web.push.apple.com/test'},'check',keys));
+        const check=await deliver(env.DB,{endpoint:'https://web.push.apple.com/test'},'check',keys);
+        for(const mode of ['error','manual']) {
+          try {check[mode]=(await fetch('https://web.push.apple.com/',{method:'HEAD',redirect:mode})).status;}
+          catch(e) {check[mode]=String(e.message).slice(0,100);}
+        }
+        return reply(check);
       } catch(e) {return reply({error:e.name,description:String(e.message).slice(0,180)});}
     }
     if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
