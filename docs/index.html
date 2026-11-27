@@ -66,9 +66,16 @@
   summary::-webkit-details-marker { display:none; }
   .chevron { flex:none; color:var(--sub); }
   details[open] > summary .chevron { transform:rotate(90deg); }
-  .shop-picker { position:relative; display:grid; place-items:center; width:36px; height:34px; flex:none; border-radius:50%; }
-  #keyword-dialog .shop-picker select { position:absolute; inset:0; width:100%; height:100%; min-height:0; opacity:0; cursor:pointer; }
-  .shop-picker:focus-within { outline:2px solid var(--blue); }
+  #form { position:relative; }
+  .shop-picker { display:grid; place-items:center; width:36px; height:34px; min-height:0; flex:none; border:0; padding:0; color:var(--ink); background:transparent; -webkit-tap-highlight-color:transparent; }
+  .shop-picker:focus { outline:0; box-shadow:none; }
+  .shop-picker:focus-visible { color:var(--blue); }
+  #shop-menu { position:absolute; top:calc(100% + 5px); left:0; z-index:2; width:min(258px,100%); padding:6px; border-radius:20px; background:var(--card); box-shadow:0 4px 22px #0004,0 0 0 1px var(--fill); }
+  #shop-menu button { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:6px 10px; background:transparent; color:var(--ink); }
+  #shop-menu button:active { background:var(--fill); }
+  .store-icon { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background:var(--fill); }
+  .store-check { margin-left:auto; visibility:hidden; color:var(--blue); }
+  [aria-pressed="true"] > .store-check { visibility:visible; }
 </style>
 <title>매물 알림</title>
 </head>
@@ -89,10 +96,14 @@
 <dialog id="keyword-dialog" aria-label="키워드 관리">
   <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
-    <span class="shop-picker">
+    <button class="shop-picker" id="shop-trigger" type="button" aria-label="상점 선택" aria-controls="shop-menu" aria-expanded="false">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg>
-      <select id="shop" aria-label="판매처 선택"><option value="mercari">메루카리</option><option value="nakano">만다라케 나카노점</option></select>
-    </span>
+    </button>
+    <input type="hidden" id="shop" value="mercari">
+    <div id="shop-menu" role="group" aria-label="검색할 상점" hidden>
+      <button type="button" data-shop="mercari" aria-pressed="true"><span class="store-icon"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 8h14l1 12H4L5 8Zm4 0V6a3 3 0 0 1 6 0v2"/></svg></span><span class="store-name">메루카리</span><span class="store-check"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg></span></button>
+      <button type="button" data-shop="nakano" aria-pressed="false"><span class="store-icon"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10l2-6h14l2 6M5 12v8h14v-8M3 10q2 5 6 0 3 5 6 0 4 5 6 0M10 20v-6h4v6"/></svg></span><span class="store-name">만다라케 나카노점</span><span class="store-check"><svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg></span></button>
+    </div>
     <input id="word" placeholder="키워드 입력…" required maxlength="80">
     <button type="submit" aria-label="키워드 등록">등록</button>
   </form>
@@ -107,15 +118,33 @@
 <script src="./config.js"></script><script src="./market.js?v=27"></script>
 <script>
   const shopPicker = document.getElementById('shop');
-  function showShop() {
-    document.getElementById('current-shop').textContent = '판매처 · ' + shopPicker.selectedOptions[0].textContent;
+  const shopMenu = document.getElementById('shop-menu');
+  const trigger = document.getElementById('shop-trigger');
+  const choices = Array.from(shopMenu.querySelectorAll('[data-shop]'));
+  function setMenu(open) {
+    shopMenu.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
   }
-  showShop();
-  shopPicker.addEventListener('change', showShop);
+  function chooseShop(choice) {
+    shopPicker.value = choice.dataset.shop;
+    for (const item of choices) item.setAttribute('aria-pressed', String(item === choice));
+    document.getElementById('current-shop').textContent = '판매처 · ' + choice.querySelector('.store-name').textContent;
+  }
+  chooseShop(choices[0]);
+  trigger.addEventListener('click', () => setMenu(shopMenu.hidden));
+  for (const choice of choices) choice.addEventListener('click', () => {
+    chooseShop(choice);
+    setMenu(false);
+    trigger.focus();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!shopMenu.hidden && !shopMenu.contains(event.target) && !trigger.contains(event.target)) setMenu(false);
+  });
   const keywordDialog = document.getElementById('keyword-dialog');
   document.getElementById('add-keyword').addEventListener('click', () => keywordDialog.showModal());
   async function closeKeywords() {
     if (!keywordDialog.open || keywordDialog.classList.contains('closing')) return;
+    setMenu(false);
     keywordDialog.classList.add('closing');
     const exit = keywordDialog.getAnimations().find(animation => animation.animationName === 'keyword-exit');
     if (exit) await exit.finished.catch(() => {});
@@ -125,7 +154,8 @@
   document.getElementById('close-keywords').addEventListener('click', closeKeywords);
   keywordDialog.addEventListener('cancel', event => {
     event.preventDefault();
-    closeKeywords();
+    if (shopMenu.hidden) closeKeywords();
+    else { setMenu(false); trigger.focus(); }
   });
   const track = document.querySelector('.page-track');
   const tabs = Array.from(document.querySelectorAll('.page-tabs button'));
