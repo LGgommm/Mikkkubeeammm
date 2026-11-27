@@ -1,0 +1,26 @@
+name: Market keyword alerts
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  issues:
+    types: [opened, reopened]
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: market-watch
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install mercapi==0.5.0 requests
+      - run: python watch.py
+        env:
+          GH_TOKEN: ${{ github.token }}
