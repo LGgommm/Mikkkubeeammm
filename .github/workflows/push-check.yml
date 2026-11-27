@@ -1,0 +1,35 @@
+name: Live web push delivery
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/push-check.yml]
+permissions: {}
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: pip install selenium
+      - run: |
+          python - <<'PY'
+          from selenium import webdriver
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          opt=webdriver.FirefoxOptions()
+          opt.add_argument('-headless')
+          opt.set_preference('permissions.default.desktop-notification',1)
+          with webdriver.Firefox(options=opt) as driver:
+              driver.get('https://lggommm.github.io/Mikkkubeeammm/?push-check=3')
+              wait=WebDriverWait(driver,60)
+              def button(name):
+                  return driver.find_element(By.ID,name)
+              try:
+                  wait.until(lambda _:button('enable-push').is_displayed())
+                  button('enable-push').click()
+                  wait.until(lambda _:button('test-push').is_displayed())
+                  button('test-push').click()
+                  wait.until(lambda _:'표시 요청을 완료' in button('push-status').text)
+              finally:
+                  print('Push UI:',button('push-status').text)
+                  driver.execute_async_script('const done=arguments[0];navigator.serviceWorker.ready.then(r=>r.pushManager.getSubscription()).then(s=>s?.unsubscribe()).finally(done)')
+          PY
