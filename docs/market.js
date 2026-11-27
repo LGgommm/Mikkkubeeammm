@@ -42,7 +42,11 @@ function product(row) {
   const match=row.title.match(/ \(([\d,]+)円\)$/);
   title.textContent=match ? row.title.slice(0,match.index) : row.title;
   price.textContent=match ? '¥'+match[1] : '가격 확인';
-  a.append(thumb,title,price);
+  const source=document.createElement('small');
+  source.className='source';
+  const host=new URL(row.url).hostname;
+  source.textContent=host==='jp.mercari.com' ? shops.mercari : host==='ekizo.mandarake.co.jp' ? shops.nakano : host;
+  a.append(thumb,title,price,source);
   function photo(url) {
     const img=new Image();
     img.alt='';
@@ -81,7 +85,14 @@ async function run(fn) {
 el('form').onsubmit=e=>{e.preventDefault();run(async()=>{
   await api('/watch',{shop:el('shop').value,keyword:el('word').value}); el('word').value='';
 });};
-el('reload').onclick=()=>run();
+el('reload').onclick=async event=>{
+  const control=event.currentTarget;
+  control.disabled=true;
+  control.setAttribute('aria-busy','true');
+  el('status').textContent='확인 중…';
+  try { await run(); }
+  finally { control.disabled=false; control.removeAttribute('aria-busy'); }
+};
 run();
 setInterval(()=>{if(!document.hidden) run();},60000);
 
