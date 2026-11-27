@@ -1,5 +1,8 @@
 name: Market keyword alerts
 on:
+  push:
+    branches: [main]
+    paths: [watch.py, .github/workflows/watch.yml, docs/config.js]
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
@@ -32,3 +35,42 @@ jobs:
               print("MARKET_API="+url,"COLLECTOR_TOKEN="+key,sep="\n",file=out)
           CODE
       - run: python watch.py
+      - name: Check live collection and web app results
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import asyncio, os, secrets
+          import requests
+          import watch
+          base = os.environ['MARKET_API']
+          errors = []
+          for shop in ('mercari', 'nakano'):
+              client = requests.Session()
+              client.headers['Authorization'] = 'Bearer ' + secrets.token_hex(32)
+              def api(path, body=None):
+                  resp = client.request('GET' if body is None else 'POST', base + path, json=body, timeout=30)
+                  resp.raise_for_status()
+                  return resp.json()
+              test_id = None
+              try:
+                  assert api('/state')['watches'] == []
+                  keyword = 'けいおん' if shop == 'mercari' else watch.nakano()[0][1][:20].strip()
+                  api('/watch', {'shop':shop, 'keyword':keyword})
+                  [created] = api('/state')['watches']
+                  assert (created['shop'], created['keyword']) == (shop, keyword)
+                  test_id = created['id']
+                  result = requests.post(base + '/collector/results', headers={'Authorization':'Bearer ' + os.environ['COLLECTOR_TOKEN']}, json={'id':test_id, 'rows':[]}, timeout=30)
+                  result.raise_for_status()
+                  asyncio.run(watch.run())
+                  state = api('/state')
+                  assert state['watches'][0]['initialized'] and state['hits'], 'No live matches'
+                  print(shop, 'verified live matches:', len(state['hits']))
+              except Exception as exc:
+                  print(shop, type(exc).__name__, str(exc)[:200])
+                  errors.append(shop)
+              finally:
+                  if test_id is not None:
+                      api('/delete', {'id':test_id})
+          if errors:
+              raise SystemExit('Failed: ' + ', '.join(errors))
+          PY
