@@ -48,7 +48,17 @@
   #keyword-dialog button[type="submit"] { flex:none; padding:0 12px; min-height:34px; font-size:14px; color:#171719; background:white; font-weight:650; box-shadow:0 0 0 1px #0001; }
   #current-shop { display:block; margin:0 8px 18px; }
   #keyword-dialog select { flex:1; }
-  #keyword-dialog ul { overflow-wrap:anywhere; }
+  #watches { display:grid; gap:8px; list-style:none; padding:0; margin:10px 0 16px; }
+  #watches > li {
+    display:grid; grid-template-columns:minmax(0,1fr); row-gap:8px;
+    padding:12px 14px; border-radius:18px; background:var(--fill);
+    color:var(--ink); overflow-wrap:anywhere;
+  }
+  #watches > li > button {
+    grid-area:2 / 1; justify-self:start; margin:0; padding:4px 12px;
+    min-height:34px; font-size:14px; border-radius:999px; background:var(--card);
+  }
+  #watches > li > button:last-child { justify-self:end; }
   #keyword-dialog #word:focus { outline:none; box-shadow:none; }
   #keyword-dialog label[for="word"]:focus { outline:none; }
   #close-keywords { width:100%; border-radius:999px; }
