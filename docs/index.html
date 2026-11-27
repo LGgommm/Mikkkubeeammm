@@ -68,9 +68,9 @@
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
 </div>
 <dialog id="keyword-dialog" aria-label="키워드 관리">
-  <label for="word">키워드 입력</label>
+  <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
-    <input id="word" placeholder="예: けいおん" required maxlength="80" autofocus>
+    <input id="word" placeholder="예: けいおん" required maxlength="80">
     <select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select>
     <button type="submit">키워드 등록</button>
   </form>
