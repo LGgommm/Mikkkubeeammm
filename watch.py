@@ -3,8 +3,8 @@ import json
 import os
 import re
 import unicodedata
-from xml.etree import ElementTree as ET
-from urllib.parse import urlsplit
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 from mercapi import Mercapi
@@ -13,24 +13,50 @@ from mercapi.requests import SearchRequestData as Search
 def normalize(value):
     return ''.join(unicodedata.normalize('NFKC', value).casefold().split())
 
+NAKANO_LIST = 'https://order.mandarake.co.jp/order/listPage/list?shop=1&soldOut=1'
+
+class ListingParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.rows = {}
+        self.url = None
+        self.parts = []
+        self.alt = ''
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == 'a':
+            self.url = None
+            url = urlsplit(urljoin(NAKANO_LIST, attrs.get('href') or ''))
+            item = parse_qs(url.query).get('itemCode', [''])[0]
+            if url.hostname == 'order.mandarake.co.jp' and url.path == '/order/detailPage/item' and item.isdigit():
+                self.url = 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=' + item
+                self.parts = []
+                self.alt = attrs.get('title') or ''
+        elif self.url and tag == 'img':
+            self.alt = attrs.get('alt') or self.alt
+
+    def handle_data(self, data):
+        if self.url:
+            self.parts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == 'a' and self.url:
+            title = ' '.join(' '.join(self.parts).split()) or self.alt.strip()
+            if title:
+                self.rows[self.url] = title
+            self.url = None
+
 def nakano():
-    response = requests.get('https://order.mandarake.co.jp/rss/?shop=1', timeout=25)
+    response = requests.get(NAKANO_LIST, headers={'User-Agent': 'MarketAlerts/1.0'}, timeout=25)
     response.raise_for_status()
-    rows = []
-    for item in ET.fromstring(response.content).iter():
-        if item.tag.split('}')[-1] not in ('item', 'entry'):
-            continue
-        link = item.find('{*}link')
-        if link is None:
-            continue
-        url = (link.get('href') or link.text or '').strip()
-        title = item.findtext('{*}title')
-        parsed = urlsplit(url)
-        if title and parsed.scheme == 'https' and (parsed.hostname or '').endswith('.mandarake.co.jp'):
-            rows.append([url, title])
-    if not rows:
-        raise ValueError('Empty Nakano feed')
-    return rows
+    if urlsplit(response.url).path != '/order/listPage/list':
+        raise ValueError('Nakano listing redirected away from the catalogue')
+    parser = ListingParser()
+    parser.feed(response.content.decode('utf-8', errors='replace'))
+    if not parser.rows:
+        raise ValueError('No product links in Nakano listing')
+    return list(parser.rows.items())
 
 async def run():
     base = os.environ['MARKET_API'].rstrip('/')
