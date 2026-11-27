@@ -32,3 +32,13 @@ CREATE TRIGGER IF NOT EXISTS queue_new_listing AFTER INSERT ON matches WHEN NEW.
 END;
 
 CREATE TABLE IF NOT EXISTS push_keys(endpoint TEXT PRIMARY KEY REFERENCES push_devices(endpoint) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS keyword_prices (
+  owner TEXT NOT NULL, keyword TEXT NOT NULL, min_yen INTEGER, max_yen INTEGER,
+  PRIMARY KEY(owner,keyword)
+);
+CREATE TRIGGER IF NOT EXISTS cleanup_keyword_price AFTER DELETE ON watches
+WHEN NOT EXISTS(SELECT 1 FROM watches WHERE owner=OLD.owner AND keyword=OLD.keyword)
+BEGIN
+  DELETE FROM keyword_prices WHERE owner=OLD.owner AND keyword=OLD.keyword;
+END;
