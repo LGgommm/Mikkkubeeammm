@@ -44,26 +44,65 @@ async function encryptPush(keys, payload) {
   const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,concat(utf8(JSON.stringify(payload)),Uint8Array.of(2)));
   return concat(salt,Uint8Array.of(0,0,16,0,65),as,new Uint8Array(cipher));
 }
-async function deliver(db, device, testId=null, checkKeys=null) {
+async function listingNotice(row,testId) {
+  const url=new URL(row.url);
+  const match=row.title.match(/\s*\(([\d,]+)円\)$/);
+  let title=match ? row.title.slice(0,match.index) : row.title;
+  let price=match ? match[1]+'엔' : '';
+  let image='';
+  const mercari=url.hostname==='jp.mercari.com' && url.pathname.match(/^\/item\/(m\d+)$/);
+  const auction=url.hostname==='ekizo.mandarake.co.jp' && url.pathname==='/auction/item/itemInfoJa.html' && /^\d+$/.test(url.searchParams.get('index')||'');
+  const catalogue=url.hostname==='order.mandarake.co.jp' && url.pathname==='/order/detailPage/item' && /^\d+$/.test(url.searchParams.get('itemCode')||'');
+  if(mercari) image='https://static.mercdn.net/item/detail/orig/photos/'+mercari[1]+'_1.jpg';
+  if(auction || catalogue) {
+    try {
+      const source=await fetch(url.href,{redirect:'error',signal:AbortSignal.timeout(6000),cf:{cacheTtl:180,cacheEverything:true}});
+      if(source.ok) {
+        const html=await source.text();
+        const photo=html.match(/<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']+)/i)
+          || html.match(/(?:src|href)=["']((?:https:)?\/\/img\.mandarake\.co\.jp\/[^"']+\.(?:jpg|jpeg|png|webp)(?:\?[^"']*)?)/i);
+        if(photo) {
+          const candidate=new URL(photo[1].replaceAll('&amp;','&'),url.href);
+          if(candidate.protocol==='https:' && candidate.hostname.endsWith('.mandarake.co.jp') && candidate.href.length<1024) image=candidate.href;
+        }
+        const plain=html.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ');
+        const yen=auction ? plain.match(/現在価格\s*([\d,]+)\s*円/) :
+          html.match(/["']price["']\s*:\s*["']?([\d,]+)/i) || plain.match(/(?:販売価格|価格)\s*[:：]?\s*([\d,]+)\s*円/);
+        if(yen) price=yen[1]+'엔';
+      }
+    } catch { /* Deliver the known listing even if the shop is temporarily unavailable. */ }
+  }
+  return {testId,title:(testId?'시험 알림 · ':'새 매물 · ')+row.keyword.slice(0,80),
+    body:title.slice(0,230)+'\n'+(price || '가격 미표시'),image,url:url.href,tag:testId || row.keyword+'|'+url.href};
+}
+
+async function deliver(db, device, payload, checkKeys=null) {
   const id = await identity(db);
   const signer = await crypto.subtle.importKey('jwk',JSON.parse(id.jwk),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const claims = {aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'https://lggommm.github.io/Mikkkubeeammm/'};
   const message = encode('{"typ":"JWT","alg":"ES256"}')+'.'+encode(JSON.stringify(claims));
   const sig = await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},signer,new TextEncoder().encode(message));
   const keys=checkKeys || await db.prepare('SELECT p256dh,auth FROM push_keys WHERE endpoint=?').bind(device.endpoint).first();
-  const body=keys ? await encryptPush(keys,testId ? {testId,title:'시험 알림',body:'이 기기에서 매물 푸시를 받을 수 있어요.'} : {title:'새 매물 알림',body:'등록한 키워드의 새 매물이 도착했어요.'}) : undefined;
+  if(!keys) return {accepted:false,stage:'subscription'};
+  const body=await encryptPush(keys,payload);
   if(checkKeys) return {bytes:body.byteLength,signature:sig.byteLength};
   let response;
   try {response = await fetch(device.endpoint,{method:'POST',redirect:'manual',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
-  if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
-  else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
+  if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
   const detail=response.ok ? {} : await response.json().catch(()=>({}));
   const reason=typeof detail?.reason==='string' && /^[A-Za-z]{1,60}$/.test(detail.reason) ? detail.reason : '';
   return {accepted:response.ok,providerStatus:response.status,reason};
 }
 async function drain(db) {
-  const devices = await db.prepare('SELECT * FROM push_devices WHERE pending>0 ORDER BY RANDOM() LIMIT 12').all();
-  await Promise.allSettled(devices.results.map(device=>deliver(db,device)));
+  const claimed=await db.prepare('UPDATE listing_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM listing_push WHERE retry_after<=unixepoch() ORDER BY retry_after,id LIMIT 8) RETURNING id,endpoint,watch_id,url').all();
+  await Promise.allSettled(claimed.results.map(async job=>{
+    const listing=await db.prepare('SELECT d.owner,d.endpoint,w.keyword,m.title,m.url FROM push_devices d JOIN watches w ON w.owner=d.owner JOIN matches m ON m.watch_id=w.id WHERE d.endpoint=? AND w.id=? AND m.url=?').bind(job.endpoint,job.watch_id,job.url).first();
+    if(listing) {
+      const result=await deliver(db,listing,await listingNotice(listing,null));
+      if(!result.accepted) return;
+    }
+    await db.prepare('DELETE FROM listing_push WHERE id=?').bind(job.id).run();
+  }));
 }
 const origin = 'https://lggommm.github.io';
 function reply(data, status = 200) {
@@ -85,7 +124,7 @@ export default {async fetch(req, env) {
       try {
         const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
         const keys={p256dh:b64(await crypto.subtle.exportKey('raw',pair.publicKey)),auth:b64(crypto.getRandomValues(new Uint8Array(16)))};
-        const check=await deliver(env.DB,{endpoint:'https://web.push.apple.com/test'},'check',keys);
+        const check=await deliver(env.DB,{endpoint:'https://web.push.apple.com/test'},{title:'서버 점검',body:'암호화 확인'},keys);
         for(const mode of ['error','manual']) {
           try {check[mode]=(await fetch('https://web.push.apple.com/',{method:'HEAD',redirect:mode})).status;}
           catch(e) {check[mode]=String(e.message).slice(0,100);}
@@ -126,7 +165,10 @@ export default {async fetch(req, env) {
       const device=await sql('SELECT * FROM push_devices WHERE endpoint=? AND owner=?',endpoint,owner).first();
       if(!device) return reply({accepted:false,providerStatus:410});
       try {
-        return reply(await deliver(env.DB,{...device,pending:0},typeof testId==='string'?testId.slice(0,64):'test'));
+        const row=await sql('SELECT w.keyword,m.title,m.url FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? ORDER BY RANDOM() LIMIT 1',owner).first();
+        if(!row) return reply({accepted:false,stage:'empty'});
+        const notice=await listingNotice(row,typeof testId==='string'?testId.slice(0,64):'test');
+        return reply(await deliver(env.DB,device,notice));
       } catch(e) {return reply({accepted:false,stage:'prepare',error:e.name});}
     }
     return reply({},404);

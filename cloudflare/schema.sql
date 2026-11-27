@@ -27,9 +27,27 @@ CREATE TABLE IF NOT EXISTS favorites (
 CREATE TABLE IF NOT EXISTS push_identity (id INTEGER PRIMARY KEY CHECK(id=1), jwk TEXT NOT NULL, public_key TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS push_devices (endpoint TEXT PRIMARY KEY, owner TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS push_owner ON push_devices(owner);
-CREATE TRIGGER IF NOT EXISTS queue_new_listing AFTER INSERT ON matches WHEN NEW.visible=1 BEGIN
-  UPDATE push_devices SET pending=pending+1 WHERE owner=(SELECT owner FROM watches WHERE id=NEW.watch_id);
+CREATE TABLE IF NOT EXISTS listing_push (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint TEXT NOT NULL REFERENCES push_devices(endpoint) ON DELETE CASCADE,
+  watch_id INTEGER NOT NULL, url TEXT NOT NULL, retry_after INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY(watch_id,url) REFERENCES matches(watch_id,url) ON DELETE CASCADE,
+  UNIQUE(endpoint,watch_id,url)
+);
+CREATE INDEX IF NOT EXISTS listing_retry ON listing_push(retry_after,id);
+CREATE TRIGGER IF NOT EXISTS queue_listing_detail AFTER INSERT ON matches WHEN NEW.visible=1 BEGIN
+  INSERT OR IGNORE INTO listing_push(endpoint,watch_id,url)
+    SELECT d.endpoint,NEW.watch_id,NEW.url FROM push_devices d JOIN watches w ON w.owner=d.owner WHERE w.id=NEW.watch_id;
 END;
+DROP TRIGGER IF EXISTS queue_new_listing;
+INSERT OR IGNORE INTO listing_push(endpoint,watch_id,url)
+SELECT endpoint,watch_id,url FROM (
+  SELECT d.endpoint,m.watch_id,m.url,d.pending,ROW_NUMBER() OVER(PARTITION BY d.endpoint ORDER BY m.found_at DESC,m.rowid DESC) AS position
+  FROM push_devices d JOIN watches w ON w.owner=d.owner JOIN matches m ON w.id=m.watch_id
+  WHERE d.pending>0 AND m.visible=1
+) WHERE position<=pending;
+UPDATE push_devices SET pending=0 WHERE pending>0;
+
 
 CREATE TABLE IF NOT EXISTS push_keys(endpoint TEXT PRIMARY KEY REFERENCES push_devices(endpoint) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
 
