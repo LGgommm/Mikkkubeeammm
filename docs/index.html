@@ -3,6 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111113">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f5f7">
+<style>
+  html { background-color: #f5f5f7; }
+  @media (prefers-color-scheme: dark) { html { background-color: #111113; } }
+</style>
+<script>
+  const darkAppearance = matchMedia('(prefers-color-scheme: dark)');
+  function updateStatusBar() {
+    document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content =
+      darkAppearance.matches ? 'black-translucent' : 'default';
+  }
+  updateStatusBar();
+  darkAppearance.addEventListener('change', updateStatusBar);
+</script>
 <link rel="manifest" href="./manifest.json">
 <link rel="stylesheet" href="./market.css?v=27">
 <title>매물 알림</title>
