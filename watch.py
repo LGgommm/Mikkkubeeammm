@@ -148,16 +148,7 @@ async def run():
             if low is not None or high is not None:
                 filtered = []
                 for url, title in rows:
-                    price_match = re.search(r'([\d,]+)\s*円\)?, json={'id':watch['id'], 'rows':rows}, timeout=30).raise_for_status()
-        except Exception as error:
-            print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
-            failed = True
-    if failed:
-        raise SystemExit(1)
-
-if __name__ == '__main__':
-    asyncio.run(run())
-, title)
+                    price_match = re.search(r'([\d,]+)\s*円\)?$', title)
                     amount = int(price_match[1].replace(',', '')) if price_match else None
                     if amount is None and url.startswith('https://ekizo.mandarake.co.jp/auction/item/itemInfoJa.html?index='):
                         if url not in auction_prices:
