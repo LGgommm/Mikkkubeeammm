@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.request
@@ -9,12 +10,19 @@ from pathlib import Path
 
 account = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip()
 token = os.environ["CLOUDFLARE_API_TOKEN"].strip()
+if not re.fullmatch(r"[0-9a-fA-F]{32}", account):
+    raise SystemExit("CLOUDFLARE_ACCOUNT_ID must be a 32-digit hexadecimal account ID")
 base = f"https://api.cloudflare.com/client/v4/accounts/{account}/"
 name = "market-alert-" + os.environ["GITHUB_REPOSITORY_ID"]
 def api(path, method="GET", data=None):
     req = urllib.request.Request(base + path, method=method, headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"}, data=json.dumps(data).encode() if data else None)
-    with urllib.request.urlopen(req, timeout=45) as response:
-        return json.load(response)["result"]
+    try:
+        with urllib.request.urlopen(req, timeout=45) as response:
+            return json.load(response)["result"]
+    except urllib.error.HTTPError as error:
+        details = json.loads(error.read()).get("errors", [])
+        print("Cloudflare", method, path, "error codes:", [d.get("code") for d in details], flush=True)
+        raise
 
 try:
     subdomain = api("workers/subdomain").get("subdomain")
