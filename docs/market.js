@@ -87,18 +87,35 @@ async function setupPush() {
     return;
   }
   try {
-    await navigator.serviceWorker.register('./sw.js');
+    await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
     const reg=await navigator.serviceWorker.ready;
     const {key:publicKey}=await api('/push/key');
     const raw=Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')+'='),c=>c.charCodeAt(0));
     async function connected(sub) {
-      await api('/push/subscribe',{endpoint:sub.endpoint});
+      await api('/push/subscribe',sub.toJSON());
       enable.hidden=true;
       test.hidden=false;
       status.textContent='이 기기에서 새 매물 푸시를 받아요.';
+      let pendingTest=null, displayed=null;
+      navigator.serviceWorker.addEventListener('message',event=>{
+        if(pendingTest && event.data?.displayed===pendingTest) {
+          displayed=pendingTest;
+          status.textContent='이 기기에서 시험 알림 표시 요청을 완료했어요.';
+        }
+      });
       test.onclick=async()=>{
         test.disabled=true;
-        try {await api('/push/test',{endpoint:sub.endpoint});status.textContent='시험 알림을 발송했어요.';}
+        try {
+          pendingTest=crypto.randomUUID();
+          const result=await api('/push/test',{endpoint:sub.endpoint,testId:pendingTest});
+          if(!result.accepted) {
+            if([404,410].includes(result.providerStatus)) {
+              await sub.unsubscribe();
+              test.hidden=true;
+              location.reload();
+            } else status.textContent='푸시 서비스가 요청을 거절했어요 (HTTP '+result.providerStatus+').';
+          } else if(displayed!==pendingTest) status.textContent='푸시 서비스 접수 완료 · 기기 수신 대기 중';
+        }
         catch {status.textContent='시험 알림 발송에 실패했어요. 알림 권한을 확인해 주세요.';}
         finally {test.disabled=false;}
       };
