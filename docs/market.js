@@ -80,21 +80,68 @@ function watchControl(label, path, action) {
   control.innerHTML='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="'+path+'"/></svg>';
   return control;
 }
-const editor=el('watch-editor');
+const form=el('editor-form');
 let editing;
-function editKeyword(keyword,rows,mode) {
-  editing={keyword,rows,mode};
+function foldEditor() {
+  if(!editing) return;
+  editing.button.setAttribute('aria-expanded','false');
+  editing.panel.classList.remove('expanded');
+  editing.panel.inert=true;
+  editing=null;
+}
+function syncRanges() {
+  const low=el('min-yen'), high=el('max-yen');
+  const end=Math.max(100000,Number(low.value)||0,Number(high.value)||0)+1;
+  const a=el('range-low'), b=el('range-high');
+  a.max=end; b.max=end;
+  a.value=low.value || 0; b.value=high.value || end;
+  a.parentNode.style.setProperty('--lo',(100*a.value/end)+'%');
+  a.parentNode.style.setProperty('--hi',(100*b.value/end)+'%');
+  a.style.zIndex=Number(b.value)===end && Number(a.value)>end/2?'1':'';
+}
+for(const id of ['min-yen','max-yen']) el(id).oninput=syncRanges;
+el('range-low').oninput=event=>{
+  const value=Math.min(+event.target.value,+el('range-high').value);
+  el('min-yen').value=value || '';
+  syncRanges();
+};
+el('range-high').oninput=event=>{
+  const value=Math.max(+event.target.value,+el('range-low').value);
+  el('max-yen').value=value===+event.target.max?'':value;
+  syncRanges();
+};
+function editKeyword(keyword,rows,mode,panel,button) {
+  const same=editing?.button===button;
+  foldEditor();
+  if(same) return;
+  const dialog=el('keyword-dialog');
+  if(!dialog.style.top) {
+    dialog.style.top=Math.max(8,dialog.getBoundingClientRect().top)+'px';
+    dialog.style.marginBlock='0';
+    dialog.style.bottom='auto';
+    dialog.style.maxHeight='calc(100dvh - '+dialog.style.top+' - 8px)';
+  }
+  panel.firstChild.append(form);
+  panel.inert=false;
+  editing={keyword,rows,mode,panel,button};
+  button.setAttribute('aria-expanded','true');
   const price=mode==='price';
-  el('editor-title').textContent=keyword+' · '+(price?'가격':'상점 선택');
   el('edit-shops').hidden=price;
   el('edit-prices').hidden=!price;
   for(const box of el('edit-shops').querySelectorAll('input')) box.checked=rows.some(row=>row.shop===box.value);
   el('min-yen').value=rows[0].min_yen??'';
   el('max-yen').value=rows[0].max_yen??'';
   el('editor-status').textContent='';
-  editor.showModal();
+  syncRanges();
+  void panel.offsetHeight;
+  panel.classList.add('expanded');
 }
-el('editor-cancel').onclick=()=>editor.close();
+el('editor-cancel').onclick=foldEditor;
+el('keyword-dialog').addEventListener('close',()=>{
+  foldEditor();
+  el('editor-parking').append(form);
+  for(const property of ['top','bottom','margin-block','max-height']) el('keyword-dialog').style.removeProperty(property);
+});
 el('editor-form').onsubmit=async event=>{
   event.preventDefault();
   const {keyword,rows,mode}=editing;
@@ -113,7 +160,7 @@ el('editor-form').onsubmit=async event=>{
       if(rows.some(row=>!shops.includes(row.shop)) && !confirm('선택 해제한 상점의 이 키워드와 관련 알림을 삭제할까요?')) return;
       await api('/keyword-shops',{keyword,shops});
     }
-    editor.close();
+    foldEditor();
     await run();
   } catch(e){el('editor-status').textContent=e.message;}
   finally {save.disabled=false;}
@@ -143,14 +190,19 @@ function watchCard([keyword, rows]) {
   });
   const options=document.createElement('div');
   options.className='watch-options';
+  const panel=document.createElement('div');
+  panel.className='watch-panel'; panel.inert=true;
+  const body=document.createElement('div');
+  body.className='panel-body'; panel.append(body);
   for(const [label,mode] of [['상점 선택','shops'],['가격','price']]) {
     const control=document.createElement('button');
     control.type='button';
     control.textContent=label;
-    control.onclick=()=>editKeyword(keyword,rows,mode);
+    control.setAttribute('aria-expanded','false');
+    control.onclick=()=>editKeyword(keyword,rows,mode,panel,control);
     options.append(control);
   }
-  return [logos,name,toggle,remove,options];
+  return [logos,name,toggle,remove,options,panel];
 }
 async function refresh() {
   const {watches,hits,favorites}=await api('/state');
@@ -160,7 +212,10 @@ async function refresh() {
     if(!groups.has(watch.keyword)) groups.set(watch.keyword,[]);
     groups.get(watch.keyword).push(watch);
   }
-  list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
+  if(!editing) {
+    el('editor-parking').append(form);
+    list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
+  }
   list('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.');
   list('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.');
   el('status').textContent='확인 '+new Date().toLocaleTimeString();

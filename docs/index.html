@@ -87,16 +87,24 @@
   }
 </style>
 <style>
-  .watch-options { grid-column:2 / -1; display:flex; flex-wrap:wrap; gap:5px; }
+  .watch-options { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:5px; }
   #watches .watch-options button { width:auto; min-height:32px; padding:4px 12px; border-radius:999px; font-size:13px; }
-  #watch-editor { width:min(350px,calc(100% - 32px)); border:0; border-radius:20px; padding:18px; color:var(--ink); background:var(--card); }
-  #watch-editor::backdrop { background:#0006; }
-  #watch-editor form { display:grid; gap:10px; }
-  #watch-editor h2 { color:var(--ink); overflow-wrap:anywhere; }
-  #watch-editor label { display:flex; align-items:center; gap:8px; margin-top:6px; }
-  #watch-editor input[type=checkbox] { min-width:18px; min-height:18px; flex:none; }
-  #watch-editor input[type=number] { width:0; }
-  #watch-editor footer { display:flex; justify-content:flex-end; gap:6px; }
+  .watch-panel { grid-column:1/-1; display:grid; grid-template-rows:0fr; transition:grid-template-rows .2s ease; }
+  .watch-panel.expanded { grid-template-rows:1fr; }
+  .panel-body { overflow:hidden; min-height:0; }
+  #keyword-dialog #editor-form { display:grid; margin:0; padding:6px 2px; gap:6px; background:transparent; border-radius:0; }
+  #edit-shops label, #edit-prices label { display:flex; gap:8px; align-items:center; font-size:14px; font-weight:500; }
+  #edit-shops label { min-height:36px; }
+  #edit-shops input { flex:none; width:18px; height:18px; min-height:0; accent-color:var(--blue); }
+  #edit-prices label input { width:0; padding:2px 8px; background:var(--card); }
+  #editor-form footer { display:flex; justify-content:flex-end; gap:6px; }
+  #watches #editor-form footer button { width:auto; padding:4px 12px; border-radius:999px; }
+  .price-track { position:relative; height:36px; margin:4px 8px; }
+  .price-track::before { content:''; position:absolute; inset:16px 0; border-radius:8px; background:linear-gradient(to right,var(--sub) var(--lo),var(--blue) var(--lo) var(--hi),var(--sub) var(--hi)); }
+  #keyword-dialog .price-track input { position:absolute; inset:0; width:100%; height:36px; appearance:none; pointer-events:none; margin:0; border:0; background:transparent; }
+  .price-track input::-webkit-slider-thumb { appearance:none; pointer-events:auto; width:22px; height:22px; border-radius:50%; background:var(--card); border:2px solid var(--blue); cursor:grab; }
+  .price-track input::-moz-range-thumb { pointer-events:auto; width:20px; height:20px; border-radius:50%; background:var(--card); border:2px solid var(--blue); }
+  @media(prefers-reduced-motion:reduce){ .watch-panel { transition:none; } }
 </style>
 <title>매물 알림</title>
 </head>
@@ -135,17 +143,17 @@
 </dialog>
 <details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
-<dialog id="watch-editor" aria-labelledby="editor-title">
+<div id="editor-parking" hidden>
   <form id="editor-form">
-    <h2 id="editor-title" tabindex="-1" autofocus></h2>
+  
     <div id="edit-shops"><label><input type="checkbox" value="mercari">메루카리</label><label><input type="checkbox" value="nakano">만다라케 나카노점</label></div>
-    <div id="edit-prices"><label>최소 가격 (엔)<input id="min-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label><label>최대 가격 (엔)<input id="max-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label></div>
+    <div id="edit-prices"><div class="price-track"><input type="range" id="range-low" aria-label="최저가 조절"><input type="range" id="range-high" aria-label="최고가 조절"></div><label>최소 가격 (엔)<input id="min-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label><label>최대 가격 (엔)<input id="max-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label></div>
     <small id="editor-status" role="status"></small>
     <footer><button type="button" id="editor-cancel">취소</button><button type="submit">저장</button></footer>
   </form>
-</dialog>
+</div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=watch-options"></script>
+<script src="./config.js"></script><script src="./market.js?v=inline-range"></script>
 <script>
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');
