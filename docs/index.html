@@ -23,15 +23,60 @@
 </script>
 <link rel="manifest" href="./manifest.json">
 <link rel="stylesheet" href="./market.css?v=27">
+<style>
+  .page-tabs { display:flex; gap:8px; margin:0 0 20px; }
+  .page-tabs button { border-radius:999px; padding:9px 20px; background:var(--card); color:var(--ink); font-weight:600; }
+  .page-tabs button[aria-selected="true"] { background:var(--ink); color:var(--card); }
+  .page-track { display:flex; align-items:flex-start; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; scrollbar-width:none; min-height:32vh; }
+  .page-track::-webkit-scrollbar { display:none; }
+  .page-track > section { flex:0 0 100%; min-width:0; scroll-snap-align:start; scroll-snap-stop:always; }
+  .page-track > section[inert] { max-height:32vh; overflow:hidden; }
+</style>
 <title>매물 알림</title>
 </head>
 <body>
 <header><button type="button" id="reload" aria-label="알림 목록 새로고침" title="새로고침"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5"/><path d="M19.8 11a8 8 0 1 0-2 6.4M20 12l-2.3-5"/></svg></button><h1>매물 알림</h1></header>
 <main>
-<section aria-labelledby="recent"><div class="heading"><h2 id="recent">최근 매물</h2><small id="status" role="status"></small></div><ul class="products" id="hits"></ul></section>
-<details><summary>찜 목록</summary><ul class="products" id="stars"></ul></details>
+<div class="page-tabs" role="tablist" aria-label="매물 목록 선택">
+  <button type="button" role="tab" id="alerts-tab" aria-selected="true" aria-controls="alerts-panel">매물 알림</button>
+  <button type="button" role="tab" id="stars-tab" aria-selected="false" aria-controls="stars-panel" tabindex="-1">찜 목록</button>
+</div>
+<div class="page-track">
+<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><small id="status" role="status"></small></div><ul class="products" id="hits"></ul></section>
+<section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
+</div>
 <details><summary>키워드 및 알림 설정</summary><form id="form"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><input id="word" aria-label="키워드" placeholder="예: けいおん" required maxlength="80"><button>키워드 등록</button></form><small>첫 확인 이후 새로 발견한 상품을 알려줘요.</small><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details id="watch-settings"><summary>등록한 키워드 관리</summary><ul id="watches"></ul></details><details><summary>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
 </main>
 <script src="./config.js"></script><script src="./market.js?v=27"></script>
+<script>
+  const track = document.querySelector('.page-track');
+  const tabs = Array.from(document.querySelectorAll('.page-tabs button'));
+  function markPage(index) {
+    tabs.forEach((tab, i) => {
+      const selected = i === index;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      track.children[i].inert = !selected;
+    });
+  }
+  function showPage(index) {
+    track.scrollTo({left: index * track.clientWidth, behavior: 'instant'});
+    markPage(index);
+  }
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => showPage(index));
+    tab.addEventListener('keydown', event => {
+      const targets = {ArrowLeft: 1-index, ArrowRight: 1-index, Home: 0, End: 1};
+      if (!(event.key in targets)) return;
+      event.preventDefault();
+      const next = targets[event.key];
+      showPage(next);
+      tabs[next].focus();
+    });
+  });
+  track.addEventListener('scroll', () => {
+    markPage(track.scrollLeft >= track.clientWidth / 2 ? 1 : 0);
+  }, {passive:true});
+</script>
 </body></html>
