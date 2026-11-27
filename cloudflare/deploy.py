@@ -62,3 +62,9 @@ for attempt in range(15):
         if attempt==14: raise
         time.sleep(4)
 Path("docs/config.js").write_text("window.MARKET_API = "+json.dumps(url)+";\n")
+
+req = urllib.request.Request(url+"/collector/push-check", headers={"Authorization":"Bearer "+key,"User-Agent":"MarketAlerts/1.0"})
+with urllib.request.urlopen(req, timeout=20) as response:
+    check=json.load(response)
+    print("Push signing and encryption check:",check)
+    assert check.get("signature")==64 and check.get("bytes",0)>100
