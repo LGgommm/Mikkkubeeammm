@@ -24,7 +24,17 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="stylesheet" href="./market.css?v=27">
 <style>
-  .page-tabs { display:flex; gap:8px; margin:0 0 20px; }
+  .list-controls { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:20px; }
+  .page-tabs { display:flex; gap:8px; }
+  #add-keyword { flex:none; width:44px; height:44px; padding:0; border:1px solid var(--fill); border-radius:50%; display:grid; place-items:center; background:var(--card); color:var(--ink); }
+  #keyword-dialog { width:min(420px,calc(100% - 32px)); max-height:80dvh; overflow:auto; border:0; border-radius:22px; padding:20px; background:var(--card); color:var(--ink); }
+  #keyword-dialog::backdrop { background:rgb(0 0 0 / 48%); }
+  #keyword-dialog label { display:block; font-weight:650; }
+  #keyword-dialog input { flex:0 0 100%; width:100%; }
+  #keyword-dialog form { margin:8px 0 20px; }
+  #keyword-dialog select { flex:1; }
+  #keyword-dialog ul { overflow-wrap:anywhere; }
+  #close-keywords { width:100%; border-radius:999px; }
   .page-tabs button { border-radius:999px; padding:9px 20px; background:var(--card); color:var(--ink); font-weight:600; }
   .page-tabs button[aria-selected="true"] { background:var(--ink); color:var(--card); }
   .page-track { display:flex; align-items:flex-start; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; scrollbar-width:none; min-height:32vh; }
@@ -37,19 +47,36 @@
 <body>
 <header><button type="button" id="reload" aria-label="알림 목록 새로고침" title="새로고침"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5"/><path d="M19.8 11a8 8 0 1 0-2 6.4M20 12l-2.3-5"/></svg></button><h1>매물 알림</h1></header>
 <main>
+<div class="list-controls">
 <div class="page-tabs" role="tablist" aria-label="매물 목록 선택">
   <button type="button" role="tab" id="alerts-tab" aria-selected="true" aria-controls="alerts-panel">매물 알림</button>
   <button type="button" role="tab" id="stars-tab" aria-selected="false" aria-controls="stars-panel" tabindex="-1">찜 목록</button>
+</div>
+<button id="add-keyword" type="button" aria-label="키워드 관리" aria-haspopup="dialog" aria-controls="keyword-dialog"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 </div>
 <div class="page-track">
 <section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><small id="status" role="status"></small></div><ul class="products" id="hits"></ul></section>
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
 </div>
-<details><summary>키워드 및 알림 설정</summary><form id="form"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><input id="word" aria-label="키워드" placeholder="예: けいおん" required maxlength="80"><button>키워드 등록</button></form><small>첫 확인 이후 새로 발견한 상품을 알려줘요.</small><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details id="watch-settings"><summary>등록한 키워드 관리</summary><ul id="watches"></ul></details><details><summary>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
+<dialog id="keyword-dialog" aria-label="키워드 관리">
+  <label for="word">키워드 입력</label>
+  <form id="form">
+    <input id="word" placeholder="예: けいおん" required maxlength="80" autofocus>
+    <select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select>
+    <button type="submit">키워드 등록</button>
+  </form>
+  <h2>등록한 키워드</h2>
+  <ul id="watches"></ul>
+  <button type="button" id="close-keywords">닫기</button>
+</dialog>
+<details><summary>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
 </main>
 <script src="./config.js"></script><script src="./market.js?v=27"></script>
 <script>
+  const keywordDialog = document.getElementById('keyword-dialog');
+  document.getElementById('add-keyword').addEventListener('click', () => keywordDialog.showModal());
+  document.getElementById('close-keywords').addEventListener('click', () => keywordDialog.close());
   const track = document.querySelector('.page-track');
   const tabs = Array.from(document.querySelectorAll('.page-tabs button'));
   function markPage(index) {
