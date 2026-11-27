@@ -21,6 +21,28 @@ header small{margin:7px 4px 0;color:#102c40}
 #watch-settings{padding:3px 0 10px}summary{cursor:pointer}
 section{padding:10px 0;margin:8px 0}section h2{margin:0 0 5px}
 #hits:has(>li),#stars:has(>li){margin-top:8px}
-.alerts-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.alerts-heading h2{margin:0}#reload{display:grid;place-items:center;width:44px;height:44px;margin:0;padding:0;border:none;border-radius:50%;background:transparent;color:#22648f}#reload:active{background:#e8f3fa}</style>
+.alerts-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.alerts-heading h2{margin:0}#reload{display:grid;place-items:center;width:44px;height:44px;margin:0;padding:0;border:none;border-radius:50%;background:transparent;color:#22648f}#reload:active{background:#e8f3fa}
+:root{color-scheme:light dark;--bg:#f2f2f7;--card:white;--ink:#171719;--secondary:#616169;--line:#d1d1d6;--blue:#0067ce;--fill:#e9e9ef}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--ink:#f5f5f7;--secondary:#ababaf;--line:#38383a;--blue:#64aeff;--fill:#2c2c2e}}
+html{background:var(--bg)}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;padding:16px 16px max(28px,env(safe-area-inset-bottom))}
+header{background:transparent;padding:8px 0;margin:0 0 16px}
+header h1{color:var(--ink);font-size:34px;letter-spacing:-1.2px;line-height:1.18;margin:8px 0 16px}
+header form{background:var(--card);border-radius:14px;padding:5px}
+header form>*{font-size:16px}header input,header select,input,select{color:var(--ink);background:var(--card)}
+button{color:var(--blue);background:var(--fill);border:none;border-radius:10px;min-height:44px}
+header button{background:#007aff;color:white;border-radius:10px}header small,small,#status{color:var(--secondary);font-size:13px}
+details,header+div{background:var(--card);border-radius:14px;margin:8px 0;padding:12px 16px}
+#watch-settings{padding:12px 16px}summary{line-height:28px;font-weight:550}
+section{background:transparent;border:0;margin:22px 0 0}section h2{font-size:22px;letter-spacing:-.5px}
+#hits,#stars{background:var(--card);border-radius:16px;padding:14px;gap:0;color:var(--secondary)}
+:is(#hits,#stars):has(li){padding:0;overflow:hidden}
+:is(#hits,#stars) li{color:var(--ink);border:0;border-radius:0}
+:is(#hits,#stars) li+li{border-top:1px solid var(--line)}
+:is(#hits,#stars) strong,#reload{color:var(--blue)}
+.thumb,.thumb img{background:var(--fill)}.thumb{border-radius:9px}
+#watches{list-style:none;padding:0}#watches li{border-top:1px solid var(--line);padding-top:8px}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+</style>
 <header><h1>매물 알림</h1><form id="form"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><input id="word" aria-label="키워드" placeholder="예: けいおん" required maxlength="80"><button>키워드 등록</button></form><small>첫 확인 이후 새로 발견한 상품을 알려줘요.</small></header><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details id="watch-settings" open><summary>등록한 키워드 관리</summary><ul id="watches"></ul></details><details><summary>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 <section><div class="alerts-heading"><h2>알림 목록</h2><button type="button" id="reload" aria-label="알림 목록 새로고침" title="새로고침"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5"/><path d="M19.8 11a8 8 0 1 0-2 6.4M20 12l-2.3-5"/></svg></button></div><p id="status" role="status"></p><ul id="hits"></ul></section><section><h2>찜 목록</h2><small>이 브라우저에서 추가한 찜을 볼 수 있어요.</small><ul id="stars"></ul></section><script src="./config.js"></script><script src="./market.js?v=device-backup"></script></html>
