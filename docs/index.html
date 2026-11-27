@@ -43,8 +43,10 @@
     @keyframes keyword-dim { from { opacity:0; } to { opacity:1; } }
   }
   #keyword-dialog label { display:block; font-weight:650; }
-  #keyword-dialog input { flex:0 0 100%; width:100%; }
-  #keyword-dialog form { margin:8px 0 20px; }
+  #keyword-dialog input { flex:1; min-width:0; padding:0; background:transparent; }
+  #keyword-dialog form { display:flex; align-items:center; flex-wrap:nowrap; gap:4px; padding:5px; margin:8px 0 5px; border-radius:999px; background:var(--fill); }
+  #keyword-dialog button[type="submit"] { flex:none; padding:0 15px; min-height:44px; color:#171719; background:white; font-weight:650; box-shadow:0 0 0 1px #0001; }
+  #current-shop { display:block; margin:0 8px 18px; }
   #keyword-dialog select { flex:1; }
   #keyword-dialog ul { overflow-wrap:anywhere; }
   #keyword-dialog label[for="word"]:focus { outline:none; }
@@ -62,10 +64,10 @@
   summary { display:flex; align-items:center; gap:8px; list-style:none; }
   summary::-webkit-details-marker { display:none; }
   .chevron { flex:none; color:var(--sub); }
-  details[open] > summary .chevron, .shop-picker .chevron { transform:rotate(90deg); }
-  .shop-picker { position:relative; flex:1; min-width:0; }
-  #keyword-dialog .shop-picker select { appearance:none; -webkit-appearance:none; width:100%; padding-right:34px; }
-  .shop-picker .chevron { pointer-events:none; position:absolute; right:12px; top:calc(50% - 8px); }
+  details[open] > summary .chevron { transform:rotate(90deg); }
+  .shop-picker { position:relative; display:grid; place-items:center; width:44px; height:44px; flex:none; border-radius:50%; }
+  #keyword-dialog .shop-picker select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+  .shop-picker:focus-within { outline:2px solid var(--blue); }
 </style>
 <title>매물 알림</title>
 </head>
@@ -86,10 +88,14 @@
 <dialog id="keyword-dialog" aria-label="키워드 관리">
   <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
-    <input id="word" placeholder="예: けいおん" required maxlength="80">
-    <span class="shop-picker"><select id="shop" aria-label="판매처"><option value="mercari">메루카리</option><option value="nakano">만다라케</option></select><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg></span>
-    <button type="submit">키워드 등록</button>
+    <span class="shop-picker">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg>
+      <select id="shop" aria-label="판매처 선택"><option value="mercari">메루카리</option><option value="nakano">만다라케 나카노점</option></select>
+    </span>
+    <input id="word" placeholder="키워드 입력…" required maxlength="80">
+    <button type="submit" aria-label="키워드 등록">등록</button>
   </form>
+  <small id="current-shop"></small>
   <h2>등록한 키워드</h2>
   <ul id="watches"></ul>
   <button type="button" id="close-keywords">닫기</button>
@@ -99,6 +105,12 @@
 </main>
 <script src="./config.js"></script><script src="./market.js?v=27"></script>
 <script>
+  const shopPicker = document.getElementById('shop');
+  function showShop() {
+    document.getElementById('current-shop').textContent = '판매처 · ' + shopPicker.selectedOptions[0].textContent;
+  }
+  showShop();
+  shopPicker.addEventListener('change', showShop);
   const keywordDialog = document.getElementById('keyword-dialog');
   document.getElementById('add-keyword').addEventListener('click', () => keywordDialog.showModal());
   async function closeKeywords() {
