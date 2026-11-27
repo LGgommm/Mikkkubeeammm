@@ -27,6 +27,17 @@ export default {async fetch(req, env) {
   }
   if (!/^[a-f0-9]{64}$/.test(key)) return reply({},401);
   const owner = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))), b=>b.toString(16).padStart(2,'0')).join('');
+  if (path === '/auction-card' && req.method === 'GET') {
+    const id = new URL(req.url).searchParams.get('id');
+    if (!/^\d{1,12}$/.test(id || '')) return reply({},400);
+    const source = await fetch('https://ekizo.mandarake.co.jp/auction/item/itemInfoJa.html?index=' + id,
+      {cf:{cacheTtl:180,cacheEverything:true}});
+    if (!source.ok) return reply({},502);
+    const html = await source.text();
+    const photo = html.match(/(?:href|src)=["']((?:https:)?\/\/img\.mandarake\.co\.jp\/[^"']+\.(?:jpg|jpeg|webp)(?:\?[^"']*)?)["']/i);
+    const price = html.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').match(/現在価格\s*([\d,]+)\s*円/);
+    return reply({image:photo ? new URL(photo[1],source.url).href : null,price:price ? price[1]+'円' : null});
+  }
   if (path === '/state' && req.method === 'GET') {
     const [w,h,f] = await env.DB.batch([
       sql('SELECT id,shop,keyword,active,initialized FROM watches WHERE owner=? ORDER BY id DESC',owner),
