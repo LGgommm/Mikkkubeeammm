@@ -47,7 +47,7 @@ class ListingParser(HTMLParser):
                 self.rows[self.url] = title
             self.url = None
 
-def nakano():
+def catalogue():
     response = requests.get(NAKANO_LIST, headers={'User-Agent': 'MarketAlerts/1.0'}, timeout=25)
     response.raise_for_status()
     if urlsplit(response.url).path != '/order/listPage/list':
@@ -57,6 +57,60 @@ def nakano():
     if not parser.rows:
         raise ValueError('No product links in Nakano listing')
     return list(parser.rows.items())
+
+class Anchors(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+        self.href = None
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            self.href = dict(attrs).get('href')
+            self.parts = []
+        elif tag == 'img' and self.href:
+            self.parts.append(dict(attrs).get('alt') or '')
+
+    def handle_data(self, data):
+        if self.href:
+            self.parts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == 'a' and self.href:
+            self.links.append((self.href, ' '.join(self.parts)))
+            self.href = None
+
+def page_links(session, url):
+    response = session.get(url, timeout=20)
+    response.raise_for_status()
+    parser = Anchors()
+    parser.feed(response.content.decode('utf-8'))
+    return [(urljoin(response.url, href), title) for href, title in parser.links]
+
+def nakano():
+    try:
+        return catalogue()
+    except (ValueError, requests.RequestException):
+        pass
+
+    rows = {}
+    with requests.Session() as session:
+        session.headers['User-Agent'] = 'MarketAlerts/1.0'
+        topics = page_links(session, 'https://www.mandarake.co.jp/dir/nkn/')
+        for article, description in dict(topics).items():
+            if not re.fullmatch(r'https://www\.mandarake\.co\.jp/dir/(?:cos/nkn|nkn)/[^?#]+\.html', article):
+                continue
+            name = re.search(r'「([^」]+)」を出品', description)
+            if not name:
+                continue
+            for url, _ in page_links(session, article):
+                if re.fullmatch(r'https://ekizo\.mandarake\.co\.jp/auction/item/itemInfoJa\.html\?index=\d+', url):
+                    rows[url] = name.group(1) + ' [中野店 オークション]'
+                    break
+    if not rows:
+        raise ValueError('No linked Nakano products in shop announcements')
+    return list(rows.items())
 
 async def run():
     base = os.environ['MARKET_API'].rstrip('/')
