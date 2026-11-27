@@ -80,6 +80,44 @@ function watchControl(label, path, action) {
   control.innerHTML='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="'+path+'"/></svg>';
   return control;
 }
+const editor=el('watch-editor');
+let editing;
+function editKeyword(keyword,rows,mode) {
+  editing={keyword,rows,mode};
+  const price=mode==='price';
+  el('editor-title').textContent=keyword+' · '+(price?'가격':'상점 선택');
+  el('edit-shops').hidden=price;
+  el('edit-prices').hidden=!price;
+  for(const box of el('edit-shops').querySelectorAll('input')) box.checked=rows.some(row=>row.shop===box.value);
+  el('min-yen').value=rows[0].min_yen??'';
+  el('max-yen').value=rows[0].max_yen??'';
+  el('editor-status').textContent='';
+  editor.showModal();
+}
+el('editor-cancel').onclick=()=>editor.close();
+el('editor-form').onsubmit=async event=>{
+  event.preventDefault();
+  const {keyword,rows,mode}=editing;
+  const save=event.submitter;
+  if(save.disabled) return;
+  save.disabled=true;
+  try {
+    if(mode==='price') {
+      const value=id=>el(id).value===''?null:el(id).valueAsNumber;
+      const min=value('min-yen'), max=value('max-yen');
+      if(min!==null && max!==null && min>max) throw Error('최대 가격은 최소 가격 이상이어야 해요.');
+      await api('/keyword-price',{keyword,min,max});
+    } else {
+      const shops=Array.from(el('edit-shops').querySelectorAll(':checked'),box=>box.value);
+      if(!shops.length) throw Error('상점을 하나 이상 선택해 주세요.');
+      if(rows.some(row=>!shops.includes(row.shop)) && !confirm('선택 해제한 상점의 이 키워드와 관련 알림을 삭제할까요?')) return;
+      await api('/keyword-shops',{keyword,shops});
+    }
+    editor.close();
+    await run();
+  } catch(e){el('editor-status').textContent=e.message;}
+  finally {save.disabled=false;}
+};
 function watchCard([keyword, rows]) {
   const logos=document.createElement('span');
   logos.className='watch-logos';
@@ -103,7 +141,16 @@ function watchCard([keyword, rows]) {
     if(confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
       return apply(rows,'/delete',row=>({id:row.id}));
   });
-  return [logos,name,toggle,remove];
+  const options=document.createElement('div');
+  options.className='watch-options';
+  for(const [label,mode] of [['상점 선택','shops'],['가격','price']]) {
+    const control=document.createElement('button');
+    control.type='button';
+    control.textContent=label;
+    control.onclick=()=>editKeyword(keyword,rows,mode);
+    options.append(control);
+  }
+  return [logos,name,toggle,remove,options];
 }
 async function refresh() {
   const {watches,hits,favorites}=await api('/state');

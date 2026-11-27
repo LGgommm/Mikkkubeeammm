@@ -86,6 +86,18 @@
     @keyframes shop-appear { from { opacity:0; transform:translateY(-3px) scale(.97); } to { opacity:1; transform:none; } }
   }
 </style>
+<style>
+  .watch-options { grid-column:2 / -1; display:flex; flex-wrap:wrap; gap:5px; }
+  #watches .watch-options button { width:auto; min-height:32px; padding:4px 12px; border-radius:999px; font-size:13px; }
+  #watch-editor { width:min(350px,calc(100% - 32px)); border:0; border-radius:20px; padding:18px; color:var(--ink); background:var(--card); }
+  #watch-editor::backdrop { background:#0006; }
+  #watch-editor form { display:grid; gap:10px; }
+  #watch-editor h2 { color:var(--ink); overflow-wrap:anywhere; }
+  #watch-editor label { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  #watch-editor input[type=checkbox] { min-width:18px; min-height:18px; flex:none; }
+  #watch-editor input[type=number] { width:0; }
+  #watch-editor footer { display:flex; justify-content:flex-end; gap:6px; }
+</style>
 <title>매물 알림</title>
 </head>
 <body>
@@ -123,8 +135,17 @@
 </dialog>
 <details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
+<dialog id="watch-editor" aria-labelledby="editor-title">
+  <form id="editor-form">
+    <h2 id="editor-title" tabindex="-1" autofocus></h2>
+    <div id="edit-shops"><label><input type="checkbox" value="mercari">메루카리</label><label><input type="checkbox" value="nakano">만다라케 나카노점</label></div>
+    <div id="edit-prices"><label>최소 가격 (엔)<input id="min-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label><label>최대 가격 (엔)<input id="max-yen" type="number" inputmode="numeric" min="0" step="1" placeholder="제한 없음"></label></div>
+    <small id="editor-status" role="status"></small>
+    <footer><button type="button" id="editor-cancel">취소</button><button type="submit">저장</button></footer>
+  </form>
+</dialog>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=grouped-watches"></script>
+<script src="./config.js"></script><script src="./market.js?v=watch-options"></script>
 <script>
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');
