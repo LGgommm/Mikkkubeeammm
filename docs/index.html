@@ -43,9 +43,9 @@
     @keyframes keyword-dim { from { opacity:0; } to { opacity:1; } }
   }
   #keyword-dialog label { display:block; font-weight:650; }
-  #keyword-dialog input { flex:1; min-width:0; padding:0; background:transparent; }
-  #keyword-dialog form { display:flex; align-items:center; flex-wrap:nowrap; gap:4px; padding:5px; margin:8px 0 5px; border-radius:999px; background:var(--fill); }
-  #keyword-dialog button[type="submit"] { flex:none; padding:0 15px; min-height:44px; color:#171719; background:white; font-weight:650; box-shadow:0 0 0 1px #0001; }
+  #keyword-dialog input { flex:1; min-width:0; min-height:34px; padding:0; background:transparent; }
+  #keyword-dialog form { display:flex; align-items:center; flex-wrap:nowrap; gap:3px; padding:3px 4px; margin:6px 0 4px; border-radius:999px; background:var(--fill); }
+  #keyword-dialog button[type="submit"] { flex:none; padding:0 12px; min-height:34px; font-size:14px; color:#171719; background:white; font-weight:650; box-shadow:0 0 0 1px #0001; }
   #current-shop { display:block; margin:0 8px 18px; }
   #keyword-dialog select { flex:1; }
   #keyword-dialog ul { overflow-wrap:anywhere; }
@@ -65,8 +65,8 @@
   summary::-webkit-details-marker { display:none; }
   .chevron { flex:none; color:var(--sub); }
   details[open] > summary .chevron { transform:rotate(90deg); }
-  .shop-picker { position:relative; display:grid; place-items:center; width:44px; height:44px; flex:none; border-radius:50%; }
-  #keyword-dialog .shop-picker select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+  .shop-picker { position:relative; display:grid; place-items:center; width:36px; height:34px; flex:none; border-radius:50%; }
+  #keyword-dialog .shop-picker select { position:absolute; inset:0; width:100%; height:100%; min-height:0; opacity:0; cursor:pointer; }
   .shop-picker:focus-within { outline:2px solid var(--blue); }
 </style>
 <title>매물 알림</title>
@@ -89,7 +89,7 @@
   <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
     <span class="shop-picker">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg>
       <select id="shop" aria-label="판매처 선택"><option value="mercari">메루카리</option><option value="nakano">만다라케 나카노점</option></select>
     </span>
     <input id="word" placeholder="키워드 입력…" required maxlength="80">
