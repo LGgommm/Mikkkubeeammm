@@ -17,16 +17,45 @@ function allowedEndpoint(value) {
       (u.hostname==='web.push.apple.com' || u.hostname.endsWith('.push.apple.com') || u.hostname==='fcm.googleapis.com' || u.hostname.endsWith('.push.services.mozilla.com'));
   } catch { return false; }
 }
-async function deliver(db, device) {
+const utf8 = s => new TextEncoder().encode(s);
+const decodeKey = s => Uint8Array.from(atob(s.replaceAll('-','+').replaceAll('_','/')),c=>c.charCodeAt(0));
+function concat(...parts) {
+  const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));
+  let pos=0;
+  for(const p of parts){out.set(p,pos);pos+=p.length;}
+  return out;
+}
+async function hkdf(secret,salt,info,length) {
+  const k=await crypto.subtle.importKey('raw',secret,'HKDF',false,['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({name:'HKDF',hash:'SHA-256',salt,info},k,length*8));
+}
+async function encryptPush(keys, payload) {
+  const ua=decodeKey(keys.p256dh);
+  const alg={name:'ECDH',namedCurve:'P-256'};
+  const pair=await crypto.subtle.generateKey(alg,true,['deriveBits']);
+  const as=new Uint8Array(await crypto.subtle.exportKey('raw',pair.publicKey));
+  const peer=await crypto.subtle.importKey('raw',ua,alg,false,[]);
+  const shared=await crypto.subtle.deriveBits({name:'ECDH',public:peer},pair.privateKey,256);
+  const ikm=await hkdf(shared,decodeKey(keys.auth),concat(utf8('WebPush: info\0'),ua,as),32);
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const cek=await hkdf(ikm,salt,utf8('Content-Encoding: aes128gcm\0'),16);
+  const nonce=await hkdf(ikm,salt,utf8('Content-Encoding: nonce\0'),12);
+  const key=await crypto.subtle.importKey('raw',cek,'AES-GCM',false,['encrypt']);
+  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,concat(utf8(JSON.stringify(payload)),Uint8Array.of(2)));
+  return concat(salt,Uint8Array.of(0,0,16,0,65),as,new Uint8Array(cipher));
+}
+async function deliver(db, device, testId=null) {
   const id = await identity(db);
   const signer = await crypto.subtle.importKey('jwk',JSON.parse(id.jwk),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const claims = {aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'https://lggommm.github.io/Mikkkubeeammm/'};
   const message = encode('{"typ":"JWT","alg":"ES256"}')+'.'+encode(JSON.stringify(claims));
   const sig = await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},signer,new TextEncoder().encode(message));
-  const response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body:new Uint8Array(0)});
+  const keys=await db.prepare('SELECT p256dh,auth FROM push_keys WHERE endpoint=?').bind(device.endpoint).first();
+  const body=keys ? await encryptPush(keys,testId ? {testId,title:'시험 알림',body:'이 기기에서 매물 푸시를 받을 수 있어요.'} : {title:'새 매물 알림',body:'등록한 키워드의 새 매물이 도착했어요.'}) : undefined;
+  const response = await fetch(device.endpoint,{method:'POST',redirect:'error',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});
   if(response.ok) await db.prepare('UPDATE push_devices SET pending=MAX(0,pending-?) WHERE owner=? AND endpoint=?').bind(device.pending,device.owner,device.endpoint).run();
   else if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
-  return response.ok;
+  return {accepted:response.ok,providerStatus:response.status};
 }
 async function drain(db) {
   const devices = await db.prepare('SELECT * FROM push_devices WHERE pending>0 ORDER BY RANDOM() LIMIT 12').all();
@@ -65,15 +94,22 @@ export default {async fetch(req, env) {
   const owner = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))), b=>b.toString(16).padStart(2,'0')).join('');
   if(path==='/push/key') return reply({key:(await identity(env.DB)).public_key});
   if(path.startsWith('/push/') && req.method==='POST') {
-    const {endpoint} = await req.json();
+    const {endpoint,keys,testId} = await req.json();
     if(!allowedEndpoint(endpoint)) return reply({},400);
     if(path==='/push/subscribe') {
       await sql('INSERT OR IGNORE INTO push_devices(endpoint,owner) VALUES(?,?)',endpoint,owner).run();
+      if(keys) {
+        if(!/^[\w-]{87}$/.test(keys.p256dh)||! /^[\w-]{22}$/.test(keys.auth)) return reply({},400);
+        const device=await sql('SELECT owner FROM push_devices WHERE endpoint=?',endpoint).first();
+        if(device.owner!==owner) return reply({},409);
+        await sql('INSERT OR REPLACE INTO push_keys VALUES(?,?,?)',endpoint,keys.p256dh,keys.auth).run();
+      }
       return reply({});
     }
     if(path==='/push/test') {
       const device=await sql('SELECT * FROM push_devices WHERE endpoint=? AND owner=?',endpoint,owner).first();
-      return device && await deliver(env.DB,{...device,pending:0}) ? reply({}) : reply({},502);
+      if(!device) return reply({accepted:false,providerStatus:410});
+      return reply(await deliver(env.DB,{...device,pending:0},typeof testId==='string'?testId.slice(0,64):'test'));
     }
     return reply({},404);
   }
