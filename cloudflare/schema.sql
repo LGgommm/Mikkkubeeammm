@@ -23,3 +23,10 @@ CREATE TABLE IF NOT EXISTS favorites (
   saved_at INTEGER NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY(owner,url)
 );
+
+CREATE TABLE IF NOT EXISTS push_identity (id INTEGER PRIMARY KEY CHECK(id=1), jwk TEXT NOT NULL, public_key TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS push_devices (endpoint TEXT PRIMARY KEY, owner TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS push_owner ON push_devices(owner);
+CREATE TRIGGER IF NOT EXISTS queue_new_listing AFTER INSERT ON matches WHEN NEW.visible=1 BEGIN
+  UPDATE push_devices SET pending=pending+1 WHERE owner=(SELECT owner FROM watches WHERE id=NEW.watch_id);
+END;
