@@ -110,8 +110,21 @@ def worker():
             app.logger.exception("Push delivery failed")
         time.sleep(max(1,300-(time.monotonic()-start)))
 
+PAGES_ORIGIN = "https://lggommm.github.io"
+
+@app.after_request
+def pages_cors(response):
+    if request.path.startswith("/api/") and request.headers.get("Origin") == PAGES_ORIGIN:
+        response.headers["Access-Control-Allow-Origin"] = PAGES_ORIGIN
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.vary.add("Origin")
+    return response
+
 @app.before_request
 def protect():
+    if request.method == "OPTIONS" and request.path.startswith("/api/"):
+        return "", 204
     if request.path.startswith("/api/") and not hmac.compare_digest(
             request.headers.get("Authorization","").encode(), ("Bearer "+KEY).encode()):
         abort(401)
