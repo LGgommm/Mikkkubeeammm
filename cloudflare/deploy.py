@@ -46,10 +46,18 @@ wrangler("secret","put","COLLECTOR_TOKEN",data=key)
 url = f"https://{name}.{subdomain}.workers.dev"
 for attempt in range(15):
     try:
-        req = urllib.request.Request(url+"/collector/watches",headers={"Authorization":"Bearer "+key})
+        req = urllib.request.Request(url+"/collector/watches",headers={"Authorization": "Bearer " + key, "User-Agent": "MarketAlerts/1.0 (deployment verification)", "Accept": "application/json"})
         with urllib.request.urlopen(req,timeout=15) as response:
             assert isinstance(json.load(response),list)
         break
+    except urllib.error.HTTPError as error:
+        body = error.read(8192)
+        edge_code = re.search(rb'(?:error code: |Error )(1[0-9]{3})', body, re.I)
+        print("Verification HTTP", error.code, "type", error.headers.get_content_type(),
+              "edge code", edge_code.group(1).decode() if edge_code else None, flush=True)
+        if attempt == 14:
+            raise
+        time.sleep(4)
     except OSError:
         if attempt==14: raise
         time.sleep(4)
