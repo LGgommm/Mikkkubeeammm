@@ -109,18 +109,24 @@ async function setupPush() {
           pendingTest=crypto.randomUUID();
           const result=await api('/push/test',{endpoint:sub.endpoint,testId:pendingTest});
           if(!result.accepted) {
-            if([404,410].includes(result.providerStatus)) {
+            if([404,410].includes(result.providerStatus) || ['VapidPkHashMismatch','BadDeviceToken'].includes(result.reason)) {
               await sub.unsubscribe();
               test.hidden=true;
               location.reload();
-            } else status.textContent='푸시 서비스가 요청을 거절했어요 (HTTP '+result.providerStatus+').';
+            } else if(result.stage==='network') status.textContent='서버에서 푸시 서비스에 연결하지 못했어요. 잠시 후 다시 눌러 주세요.';
+            else if(result.stage==='prepare') status.textContent='서버 메시지 준비 실패 ('+result.error+').';
+            else status.textContent='푸시 서비스 응답: HTTP '+result.providerStatus+(result.reason?' / '+result.reason:'');
           } else if(displayed!==pendingTest) status.textContent='푸시 서비스 접수 완료 · 기기 수신 대기 중';
         }
-        catch {status.textContent='시험 알림 발송에 실패했어요. 알림 권한을 확인해 주세요.';}
+        catch(e) {status.textContent='시험 요청 오류: '+e.message;}
         finally {test.disabled=false;}
       };
     }
-    const sub=await reg.pushManager.getSubscription();
+    let sub=await reg.pushManager.getSubscription();
+    if(sub?.options.applicationServerKey && !raw.every((v,i)=>new Uint8Array(sub.options.applicationServerKey)[i]===v)) {
+      await sub.unsubscribe();
+      sub=null;
+    }
     if(sub) return await connected(sub);
     enable.hidden=false;
     enable.onclick=async()=>{
