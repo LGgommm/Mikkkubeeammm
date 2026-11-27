@@ -42,3 +42,13 @@ WHEN NOT EXISTS(SELECT 1 FROM watches WHERE owner=OLD.owner AND keyword=OLD.keyw
 BEGIN
   DELETE FROM keyword_prices WHERE owner=OLD.owner AND keyword=OLD.keyword;
 END;
+
+CREATE TABLE IF NOT EXISTS keyword_prices_krw (
+  owner TEXT NOT NULL, keyword TEXT NOT NULL, min_krw INTEGER NOT NULL, max_krw INTEGER NOT NULL,
+  PRIMARY KEY(owner,keyword), CHECK(min_krw >= 0 AND min_krw <= max_krw AND max_krw <= 1000000)
+);
+CREATE TRIGGER IF NOT EXISTS cleanup_keyword_price_krw AFTER DELETE ON watches
+WHEN NOT EXISTS(SELECT 1 FROM watches WHERE owner=OLD.owner AND keyword=OLD.keyword)
+BEGIN
+  DELETE FROM keyword_prices_krw WHERE owner=OLD.owner AND keyword=OLD.keyword;
+END;

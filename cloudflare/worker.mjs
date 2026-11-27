@@ -95,7 +95,7 @@ export default {async fetch(req, env) {
     }
     if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
     if (path === '/collector/watches' && req.method === 'GET')
-      return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) WHERE active=1').all()).results);
+      return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
     if (path === '/collector/results' && req.method === 'POST') {
       const {id,rows} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
@@ -144,7 +144,7 @@ export default {async fetch(req, env) {
   }
   if (path === '/state' && req.method === 'GET') {
     const [w,h,f] = await env.DB.batch([
-      sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
+      sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
       sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.visible=1 ORDER BY m.found_at DESC LIMIT 300',owner),
       sql('SELECT url,title FROM favorites WHERE owner=? ORDER BY saved_at DESC',owner)]);
     return reply({watches:w.results,hits:h.results,favorites:f.results});
@@ -156,7 +156,12 @@ export default {async fetch(req, env) {
     if(path==='/keyword-price') {
       const valid=n=>n===null || (Number.isSafeInteger(n) && n>=0);
       if(!valid(b.min) || !valid(b.max) || (b.min!==null && b.max!==null && b.min>b.max)) return reply({},400);
-      await sql('INSERT INTO keyword_prices(owner,keyword,min_yen,max_yen) VALUES(?,?,?,?) ON CONFLICT(owner,keyword) DO UPDATE SET min_yen=excluded.min_yen,max_yen=excluded.max_yen',owner,b.keyword,b.min,b.max).run();
+      if(b.currency==='KRW') {
+        if(b.min===null || b.max===null || b.max>1000000) return reply({},400);
+        await env.DB.batch([sql('INSERT INTO keyword_prices_krw(owner,keyword,min_krw,max_krw) VALUES(?,?,?,?) ON CONFLICT(owner,keyword) DO UPDATE SET min_krw=excluded.min_krw,max_krw=excluded.max_krw',owner,b.keyword,b.min,b.max),sql('DELETE FROM keyword_prices WHERE owner=? AND keyword=?',owner,b.keyword)]);
+      } else {
+        await env.DB.batch([sql('INSERT INTO keyword_prices(owner,keyword,min_yen,max_yen) VALUES(?,?,?,?) ON CONFLICT(owner,keyword) DO UPDATE SET min_yen=excluded.min_yen,max_yen=excluded.max_yen',owner,b.keyword,b.min,b.max),sql('DELETE FROM keyword_prices_krw WHERE owner=? AND keyword=?',owner,b.keyword)]);
+      }
     } else {
       if(!Array.isArray(b.shops) || !b.shops.length || !b.shops.every(s=>['mercari','nakano'].includes(s))) return reply({},400);
       const chosen=new Set(b.shops);
