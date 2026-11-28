@@ -210,7 +210,7 @@ function watchCard([keyword, rows]) {
   const name=document.createElement('span');
   name.className='watch-keyword';
   name.textContent=keyword;
-  const pause=rows.some(row=>row.active);
+  let pause=rows.some(row=>row.active);
   async function apply(targets, path, body) {
     const results=await Promise.allSettled(targets.map(row=>api(path,body(row))));
     const failed=results.some(result=>result.status==='rejected');
@@ -222,7 +222,14 @@ function watchCard([keyword, rows]) {
       toggle.disabled=true;
       try {
         const ok=await apply(rows.filter(row=>Boolean(row.active)===pause),'/toggle',row=>({id:row.id,active:!pause}));
-        if(ok && pause) await closeKeywords();
+        if(ok) {
+          for(const row of rows) row.active=!pause;
+          pause=!pause;
+          const label=keyword+(pause?' 일시정지':' 재개');
+          toggle.title=label;
+          toggle.setAttribute('aria-label',label);
+          toggle.querySelector('path').setAttribute('d',pause?'M5 3v10M11 3v10':'M5 3l8 5-8 5z');
+        }
       } finally {toggle.disabled=false;}
     });
   const remove=watchControl(keyword+' 삭제','M4 4l8 8M12 4l-8 8',()=>{
