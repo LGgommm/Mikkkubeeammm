@@ -53,7 +53,7 @@ def catalogue(word):
             rows[url] = text
     return rows
 
-def arrivals(stock):
+def arrivals(stock,terms=()):
     # The shop's own public widget runs on its Nakano pages and returns zaiko per item.
     from playwright.sync_api import sync_playwright, Error as BrowserError
     binary = os.environ.get('MARKET_CHROME') or shutil.which('google-chrome') or shutil.which('chromium')
@@ -63,24 +63,46 @@ def arrivals(stock):
             browser = playwright.chromium.launch(executable_path=binary)
             tab = browser.new_page()
             tab.route('**/*', lambda route: route.continue_() if route.request.is_navigation_request() or
-                      route.request.url == endpoint else route.abort())
+                      (route.request.url == endpoint or route.request.url.startswith(ORDER+'json/itemlist?')) else route.abort())
             tab.goto(SHOP,wait_until='domcontentloaded',timeout=25000)
             if urlsplit(tab.url).hostname != 'www.mandarake.co.jp':
                 raise ValueError('Nakano widget page unavailable')
             items = tab.evaluate("""async url=>{
-              const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+              try {const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
                 body:JSON.stringify({shop:1,adult:false,stock_only:false,count:100}),signal:AbortSignal.timeout(15000)});
               if(!response.ok) throw Error('Nakano widget '+response.status);
               const payload=await response.json();
               if(payload.status!=='success' || !Array.isArray(payload.data)) throw Error('Invalid Nakano widget response');
-              return payload.data;
+              return payload.data;} catch {return [];}
             }""",endpoint)
+            for term in dict.fromkeys(terms):
+                found=tab.evaluate("""term=>new Promise(resolve=>{
+                  const callback='nakanoItems'+Math.random().toString(36).slice(2);
+                  const script=document.createElement('script');
+                  function finish(items) {
+                    clearTimeout(timer);script.remove();delete window[callback];resolve(items);
+                  }
+                  const timer=setTimeout(()=>finish([]),9000);
+                  window[callback]=r=>finish(Array.isArray(r.items)?r.items:[]);
+                  script.onerror=()=>finish([]);
+                  script.src='https://order.mandarake.co.jp/order/json/itemlist?'+new URLSearchParams({
+                    callback,limit:50,offset:0,lang:'ja',keyword:term,category:'00',shop_code:1,urikire_ari:1,adult_condition:0
+                  });
+                  document.head.append(script);
+                })""",term)
+                for item in found:
+                    if str(item.get('shop_code','')).lstrip('0')!='1' or str(item.get('adult',0))=='1':
+                        continue
+                    items.append({'shop':1,'item_code':item.get('idx'),'title':item.get('title'),'price':item.get('price'),
+                                  'thumbnail':urljoin('https://img.mandarake.co.jp/',item.get('thumnail') or ''),
+                                  'zaiko':item.get('zaiko')})
     except BrowserError as error:
         raise ValueError('Nakano widget unavailable') from error
     rows = {}
     for item in items:
         code = str(item.get('item_code',''))
-        quantity = str(item.get('zaiko',''))
+        raw_quantity=item.get('zaiko')
+        quantity=str(int(raw_quantity)) if isinstance(raw_quantity,bool) else str(raw_quantity)
         if str(item.get('shop'))!='1' or not code.isdigit() or not quantity.isdigit():
             continue
         url = DETAIL+code
@@ -116,10 +138,10 @@ def article_items(article):
             rows[url] = name
     return rows
 
-def nakano(stock_feed=None):
+def nakano(stock_feed=None,terms=()):
     rows = {}
     try:
-        rows.update(arrivals(stock_feed if stock_feed is not None else {}))
+        rows.update(arrivals(stock_feed if stock_feed is not None else {},terms))
     except (requests.RequestException,ValueError,KeyError):
         pass
     try:
@@ -183,17 +205,8 @@ def inspect_stock(row, stock_feed):
         pass
     return observation
 
-def check_favorites(session,base,stock_feed):
-    batch=session.get(base+'/collector/restocks',timeout=30)
-    batch.raise_for_status()
-    rows=batch.json()
+def check_favorites(session,base,stock_feed,rows):
     if not rows: return
-    if stock_feed is None:
-        try:
-            stock_feed={}
-            arrivals(stock_feed)
-        except (requests.RequestException,ValueError,KeyError):
-            stock_feed={}
     with ThreadPoolExecutor(max_workers=3) as pool:
         observations=list(pool.map(lambda row: inspect_stock(row,stock_feed),rows))
     if observations:
@@ -207,12 +220,19 @@ async def run():
     response.raise_for_status()
     client = Mercapi()
     failed = False
-    stock_feed = None
-    searches = {}
-    feed = None
+    watches=response.json()
+    favorites=session.get(base+'/collector/restocks',timeout=30)
+    favorites.raise_for_status()
+    favorites=favorites.json()
+    terms=[w['keyword'] for w in watches if w['shop']=='nakano']
+    # A saved item can leave the newest page. Search its title and compare the exact item code.
+    terms.extend(re.sub(r' \([\d,]+円\)$','',f['title'])[:90] for f in favorites if f.get('title'))
+    stock_feed={}
+    searches={}
+    feed=None
     auction_prices = {}
     won_per_yen = None
-    for watch in response.json():
+    for watch in watches:
         shop, word = watch['shop'], watch['keyword']
         try:
             posted = {}
@@ -221,17 +241,18 @@ async def run():
                 rows = [['https://jp.mercari.com/item/' + x.id_, f'{x.name} ({x.price:,}円)'] for x in result.items if re.fullmatch(r'm\d+', x.id_)]
                 posted = {'https://jp.mercari.com/item/' + x.id_: int(x.created.timestamp()) for x in result.items if x.created}
             else:
-                if word not in searches:
-                    try:
-                        searches[word] = catalogue(word)
-                    except (requests.RequestException,ValueError):
-                        searches[word] = {}
                 if feed is None:
-                    stock_feed = {}
                     try:
-                        feed = await asyncio.to_thread(nakano,stock_feed)
+                        feed = await asyncio.to_thread(nakano,stock_feed,terms)
                     except requests.RequestException:
                         feed = []
+                if word not in searches:
+                    searches[word]={}
+                    if not stock_feed:
+                        try:
+                            searches[word] = catalogue(word)
+                        except (requests.RequestException,ValueError):
+                            pass
                 combined = dict(feed)
                 combined.update(searches[word])
                 rows = [(url,title) for url,title in combined.items() if all(normalize(term) in normalize(title) for term in word.split())]
@@ -268,7 +289,12 @@ async def run():
         except Exception as error:
             print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
             failed = True
-    await asyncio.to_thread(check_favorites,session,base,stock_feed)
+    if feed is None and favorites:
+        try:
+            await asyncio.to_thread(arrivals,stock_feed,terms)
+        except (requests.RequestException,ValueError,KeyError):
+            pass
+    await asyncio.to_thread(check_favorites,session,base,stock_feed,favorites)
     if failed:
         raise SystemExit(1)
 
