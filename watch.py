@@ -84,8 +84,8 @@ def arrivals(stock):
         if str(item.get('shop'))!='1' or not code.isdigit() or not quantity.isdigit():
             continue
         url = DETAIL+code
-        stock[url] = int(quantity)>0
-        if stock[url] and item.get('title'):
+        stock[url] = {'available':int(quantity)>0,'image':item.get('thumbnail') or ''}
+        if item.get('title'):
             price = str(item.get('price','')).replace(',','')
             rows[url] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
     return rows
@@ -173,7 +173,7 @@ def inspect_stock(row, stock_feed):
     if not re.fullmatch(re.escape(DETAIL)+r'[0-9]+',url):
         return observation
     if url in stock_feed:
-        observation['available']=stock_feed[url]
+        observation['available']=stock_feed[url]['available']
         return observation
     try:
         response = page(url)
@@ -263,7 +263,8 @@ async def run():
                     if amount is not None and (low is None or amount >= low) and (high is None or amount <= high):
                         filtered.append([url, title])
                 rows = filtered
-            session.post(base + '/collector/results', json={'id':watch['id'], 'rows':rows, 'posted':posted}, timeout=30).raise_for_status()
+            metadata = {url:stock_feed[url] for url,_ in rows if stock_feed and url in stock_feed} if shop=='nakano' else {}
+            session.post(base + '/collector/results', json={'id':watch['id'], 'rows':rows, 'posted':posted,'catalogue':metadata}, timeout=30).raise_for_status()
         except Exception as error:
             print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
             failed = True
