@@ -75,6 +75,8 @@ jobs:
               try:
                   assert api('/state')['watches'] == []
                   keyword = 'けいおん' if shop == 'mercari' else watch.nakano()[0][1][:20].strip()
+                  import time
+                  started = int(time.time())
                   api('/watch', {'shop':shop, 'keyword':keyword})
                   [created] = api('/state')['watches']
                   assert (created['shop'], created['keyword']) == (shop, keyword)
@@ -83,7 +85,11 @@ jobs:
                   result.raise_for_status()
                   asyncio.run(watch.run())
                   state = api('/state')
-                  assert state['watches'][0]['initialized'] and state['hits'], 'No live matches'
+                  assert state['watches'][0]['initialized']
+                  if shop == 'mercari':
+                      assert all(hit['posted_at'] >= started - 2 for hit in state['hits'])
+                  else:
+                      assert state['hits'], 'No live Nakano matches'
                   print(shop, 'verified live matches:', len(state['hits']))
                   if shop == 'nakano':
                       from selenium import webdriver
