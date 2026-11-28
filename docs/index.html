@@ -27,7 +27,8 @@
 <style>
   .feed-tools,#filter-dialog header,#filter-dialog footer,.filter-range,.filter-choices {display:flex;align-items:center;gap:8px}
   .feed-tools {margin-left:auto}
-  #feed-filter {min-height:32px;padding:4px 12px;border-radius:999px}
+  #feed-filter {display:grid;place-items:center;width:34px;height:34px;min-height:34px;padding:0;border-radius:50%}
+  #feed-filter svg {width:16px;height:16px}
   #feed-filter.active,#filter-done,.filter-choices button[aria-pressed=true] {background:var(--blue);color:var(--card)}
   #filter-dialog {width:min(380px,calc(100% - 32px));max-height:80dvh;padding:18px;border:0;border-radius:22px;color:var(--ink);background:var(--card)}
   #filter-dialog::backdrop {background:#0007}
@@ -136,7 +137,7 @@
 <button id="add-keyword" type="button" aria-label="키워드 관리" aria-haspopup="dialog" aria-controls="keyword-dialog"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 </div>
 <div class="page-track">
-<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" type="button" aria-haspopup="dialog" aria-controls="filter-dialog">필터</button></span></div><ul class="products" id="hits"></ul></section>
+<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" type="button" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
 </div>
 <dialog id="filter-dialog" aria-labelledby="filter-title">
