@@ -72,3 +72,17 @@ BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS listing_times (url TEXT PRIMARY KEY, posted_at INTEGER NOT NULL);
+
+CREATE TABLE IF NOT EXISTS mercari_sessions (
+  watch_id INTEGER PRIMARY KEY REFERENCES watches(id) ON DELETE CASCADE,
+  started_at INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO mercari_sessions(watch_id,started_at)
+SELECT id,unixepoch() FROM watches WHERE shop='mercari';
+CREATE TRIGGER IF NOT EXISTS start_mercari_watch AFTER INSERT ON watches WHEN NEW.shop='mercari' BEGIN
+  INSERT INTO mercari_sessions VALUES(NEW.id,unixepoch());
+END;
+CREATE TRIGGER IF NOT EXISTS resume_mercari_watch AFTER UPDATE OF active ON watches
+WHEN NEW.shop='mercari' AND OLD.active=0 AND NEW.active=1 BEGIN
+  UPDATE mercari_sessions SET started_at=unixepoch() WHERE watch_id=NEW.id;
+END;
