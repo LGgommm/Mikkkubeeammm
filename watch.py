@@ -4,7 +4,9 @@ import os
 import re
 import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
-from html.parser import HTMLParser
+import time
+from concurrent.futures import ThreadPoolExecutor
+from bs4 import BeautifulSoup
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
@@ -14,104 +16,163 @@ from mercapi.requests import SearchRequestData as Search
 def normalize(value):
     return ''.join(unicodedata.normalize('NFKC', value).casefold().split())
 
-NAKANO_LIST = 'https://order.mandarake.co.jp/order/listPage/list?shop=1&soldOut=1'
+SHOP = 'https://www.mandarake.co.jp/dir/nkn/'
+ORDER = 'https://order.mandarake.co.jp/order/'
+DETAIL = ORDER + 'detailPage/item?itemCode='
+AUCTION = 'https://ekizo.mandarake.co.jp/auction/item/itemInfoJa.html?index='
 
-class ListingParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.rows = {}
-        self.url = None
-        self.parts = []
-        self.alt = ''
+def product_link(href, base):
+    url = urlsplit(urljoin(base, href))
+    for prefix, key in ((DETAIL,'itemCode'), (AUCTION,'index')):
+        expected = urlsplit(prefix)
+        if (url.hostname, url.path) == (expected.hostname, expected.path):
+            code = parse_qs(url.query).get(key, [''])[0]
+            if re.fullmatch(r'[0-9]+', code):
+                return prefix + code
+    return None
 
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        if tag == 'a':
-            self.url = None
-            url = urlsplit(urljoin(NAKANO_LIST, attrs.get('href') or ''))
-            item = parse_qs(url.query).get('itemCode', [''])[0]
-            if url.hostname == 'order.mandarake.co.jp' and url.path == '/order/detailPage/item' and item.isdigit():
-                self.url = 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=' + item
-                self.parts = []
-                self.alt = attrs.get('title') or ''
-        elif self.url and tag == 'img':
-            self.alt = attrs.get('alt') or self.alt
+def page(url, **kwargs):
+    result = requests.get(url, headers={'User-Agent':'MarketAlerts/1.0'}, timeout=12, **kwargs)
+    result.raise_for_status()
+    return result
 
-    def handle_data(self, data):
-        if self.url:
-            self.parts.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == 'a' and self.url:
-            title = ' '.join(' '.join(self.parts).split()) or self.alt.strip()
-            if title:
-                self.rows[self.url] = title
-            self.url = None
-
-def catalogue():
-    response = requests.get(NAKANO_LIST, headers={'User-Agent': 'MarketAlerts/1.0'}, timeout=25)
-    response.raise_for_status()
-    if urlsplit(response.url).path != '/order/listPage/list':
-        raise ValueError('Nakano listing redirected to ' + urlsplit(response.url).netloc + urlsplit(response.url).path)
-    parser = ListingParser()
-    parser.feed(response.content.decode('utf-8', errors='replace'))
-    if not parser.rows:
-        raise ValueError('No product links in Nakano listing')
-    return list(parser.rows.items())
-
-class Anchors(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.links = []
-        self.href = None
-        self.parts = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag == 'a':
-            self.href = dict(attrs).get('href')
-            self.parts = []
-        elif tag == 'img' and self.href:
-            self.parts.append(dict(attrs).get('alt') or '')
-
-    def handle_data(self, data):
-        if self.href:
-            self.parts.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == 'a' and self.href:
-            self.links.append((self.href, ' '.join(self.parts)))
-            self.href = None
-
-def page_links(session, url):
-    response = session.get(url, timeout=20)
-    response.raise_for_status()
-    parser = Anchors()
-    parser.feed(response.content.decode('utf-8'))
-    return [(urljoin(response.url, href), title) for href, title in parser.links]
-
-def nakano():
-    try:
-        return catalogue()
-    except (ValueError, requests.RequestException):
-        pass
-
+def catalogue(word):
+    result = page(ORDER+'listPage/serchKeyWord', params={'shop':1,'soldOut':0,'keyword':word,'categoryCode':'00','lang':'ja'})
+    final = urlsplit(result.url)
+    if final.hostname != urlsplit(ORDER).hostname or not final.path.startswith('/order/listPage/'):
+        raise ValueError('Catalogue unavailable')
+    soup = BeautifulSoup(result.content, 'html.parser', from_encoding='utf-8')
     rows = {}
-    with requests.Session() as session:
-        session.headers['User-Agent'] = 'MarketAlerts/1.0'
-        topics = page_links(session, 'https://www.mandarake.co.jp/dir/nkn/')
-        for article, description in dict(topics).items():
-            if not re.fullmatch(r'https://www\.mandarake\.co\.jp/dir/(?:cos/nkn|nkn)/[^?#]+\.html', article):
-                continue
-            name = re.search(r'「([^」]+)」を出品', description)
-            if not name:
-                continue
-            for url, _ in page_links(session, article):
-                if re.fullmatch(r'https://ekizo\.mandarake\.co\.jp/auction/item/itemInfoJa\.html\?index=\d+', url):
-                    rows[url] = name.group(1) + ' [中野店 オークション]'
-                    break
-    if not rows:
-        raise ValueError('No linked Nakano products in shop announcements')
+    for a in soup.select('a[href]'):
+        url = product_link(a['href'],result.url)
+        if not url or not url.startswith(DETAIL):
+            continue
+        text = a.get_text(' ',strip=True) or a.get('title') or (a.img.get('alt','') if a.img else '')
+        if text:
+            rows[url] = text
+    return rows
+
+def arrivals():
+    result = requests.post('https://tools.mandarake.co.jp/tools/newArrivalItems/',
+                           json={'shop':1,'stock_only':True,'adult':False,'count':20},timeout=12)
+    result.raise_for_status()
+    rows = {}
+    for item in result.json()['data']:
+        code = str(item.get('item_code',''))
+        if code.isdigit() and item.get('title'):
+            price = str(item.get('price','')).replace(',','')
+            rows[DETAIL+code] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
+    return rows
+
+def article_items(article):
+    try:
+        result = page(article)
+    except requests.RequestException:
+        return {}
+    soup = BeautifulSoup(result.content, 'html.parser', from_encoding='utf-8')
+    body = soup.select_one('[itemprop="articleBody"]')
+    rows = {}
+    if not body:
+        return rows
+    for a in body.select('a[href]'):
+        url = product_link(a['href'],article)
+        if not url:
+            continue
+        name = a.get_text(' ',strip=True)
+        if not name or name.startswith('http') or name in ('こちら','通販はこちら'):
+            block = a.find_parent('p')
+            parts = list(block.stripped_strings) if block else []
+            name = next((t for t in reversed(parts) if not t.startswith(('http','＜＜')) and t != name), '')
+        if not name:
+            title = soup.select_one('h1')
+            name = title.get_text(' ',strip=True) if title else ''
+        if name:
+            rows[url] = name
+    return rows
+
+def nakano(stock_feed=None):
+    rows = {}
+    try:
+        rows.update(arrivals())
+        if stock_feed is not None:
+            stock_feed.update(rows)
+    except (requests.RequestException,ValueError,KeyError):
+        pass
+    try:
+        soup = BeautifulSoup(page(SHOP).content,'html.parser',from_encoding='utf-8')
+        articles = dict.fromkeys(urljoin(SHOP,a['href']) for a in soup.select('.post_block a[href]'))
+        urls = [u for u in articles if re.fullmatch(r'https://(?:www\.)?mandarake\.co\.jp/dir/(?:cos/nkn|nkn)/[^?#]+\.html',u)]
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            for items in pool.map(article_items,urls[:12]):
+                rows.update(items)
+    except requests.RequestException:
+        if not rows: raise
     return list(rows.items())
+
+def stock_status(html, url):
+    soup = BeautifulSoup(html,'html.parser',from_encoding='utf-8')
+    states = set()
+    def observe(value):
+        state = str(value).rstrip('/').rsplit('/',1)[-1]
+        if state in ('InStock','OutOfStock','SoldOut'):
+            states.add(state=='InStock')
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(script.get_text())
+        except ValueError:
+            continue
+        nodes = data if isinstance(data,list) else [data]
+        for node in nodes:
+            if not isinstance(node,dict): continue
+            nodes.extend(node.get('@graph',[]) if isinstance(node.get('@graph'),list) else [])
+            if node.get('@type')!='Product': continue
+            offers = node.get('offers',[])
+            for offer in offers if isinstance(offers,list) else [offers]:
+                if not isinstance(offer,dict): continue
+                target = offer.get('url') or node.get('url')
+                if target and product_link(str(target),url)!=url: continue
+                if not target and str(node.get('sku',''))!=url.split('=')[-1] and len(nodes)>1: continue
+                observe(offer.get('availability'))
+    for tag in soup.select('[itemprop="availability"]'):
+        product = tag.find_parent(attrs={'itemtype':re.compile(r'/Product$')})
+        if product and len(soup.select('[itemtype$="/Product"]'))==1:
+            observe(tag.get('href') or tag.get('content') or tag.get_text(strip=True))
+    for tag in soup.select('meta[property="product:availability"],meta[property="og:availability"]'):
+        status=tag.get('content','').strip().casefold()
+        if status in ('in stock','out of stock','sold out'):
+            states.add(status=='in stock')
+    return states.pop() if len(states)==1 else None
+
+def inspect_stock(row, stock_feed):
+    url = row['url']
+    observation = {'url':url,'available':None,'at':time.time_ns()//1_000_000}
+    if not re.fullmatch(re.escape(DETAIL)+r'[0-9]+',url):
+        return observation
+    if url in stock_feed:
+        observation['available']=True
+        return observation
+    try:
+        response = page(url)
+        if product_link(response.url, url)==url:
+            observation['available'] = stock_status(response.content,url)
+    except requests.RequestException:
+        pass
+    return observation
+
+def check_favorites(session,base,stock_feed):
+    batch=session.get(base+'/collector/restocks',timeout=30)
+    batch.raise_for_status()
+    rows=batch.json()
+    if not rows: return
+    if stock_feed is None:
+        try:
+            stock_feed=arrivals()
+        except (requests.RequestException,ValueError,KeyError):
+            stock_feed={}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        observations=list(pool.map(lambda row: inspect_stock(row,stock_feed),rows))
+    if observations:
+        session.post(base+'/collector/restocks',json={'observations':observations},timeout=30).raise_for_status()
 
 async def run():
     base = os.environ['MARKET_API'].rstrip('/')
@@ -121,6 +182,8 @@ async def run():
     response.raise_for_status()
     client = Mercapi()
     failed = False
+    stock_feed = None
+    searches = {}
     feed = None
     auction_prices = {}
     won_per_yen = None
@@ -133,9 +196,20 @@ async def run():
                 rows = [['https://jp.mercari.com/item/' + x.id_, f'{x.name} ({x.price:,}円)'] for x in result.items if re.fullmatch(r'm\d+', x.id_)]
                 posted = {'https://jp.mercari.com/item/' + x.id_: int(x.created.timestamp()) for x in result.items if x.created}
             else:
+                if word not in searches:
+                    try:
+                        searches[word] = catalogue(word)
+                    except (requests.RequestException,ValueError):
+                        searches[word] = {}
                 if feed is None:
-                    feed = nakano()
-                rows = [r for r in feed if normalize(word) in normalize(r[1])]
+                    stock_feed = {}
+                    try:
+                        feed = nakano(stock_feed)
+                    except requests.RequestException:
+                        feed = []
+                combined = dict(feed)
+                combined.update(searches[word])
+                rows = [(url,title) for url,title in combined.items() if all(normalize(term) in normalize(title) for term in word.split())]
             low, high = watch.get('min_yen'), watch.get('max_yen')
             krw = watch.get('max_krw') is not None
             if krw:
@@ -168,6 +242,7 @@ async def run():
         except Exception as error:
             print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
             failed = True
+    check_favorites(session,base,stock_feed)
     if failed:
         raise SystemExit(1)
 
