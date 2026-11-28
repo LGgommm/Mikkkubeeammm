@@ -117,19 +117,21 @@ async function describeListing(req,env,ctx,product,stored) {
   const cached=await caches.default.match(cacheRequest);
   if(cached) return reply(await cached.json());
 
-  let description='';
+  let description='', sourceStatus='unavailable';
   try {
-    const source=await fetch(product.url,{redirect:'error',signal:AbortSignal.timeout(6000)});
-    if(source.ok && source.headers.get('Content-Type')?.includes('text/html')) description=await productDescription(source);
-  } catch { /* Some stock pages are available only through the store catalogue. */ }
+    const source=await fetch(product.url,{redirect:'manual',signal:AbortSignal.timeout(6000),cf:{cacheTtl:180,cacheEverything:true}});
+    sourceStatus=String(source.status);
+    if(source.ok) description=await productDescription(source);
+  } catch (error) {sourceStatus=error.name;}
   description=(description || stored?.description || '').trim();
-  if(!description) return reply({description:'',translated:false});
+  if(!description) return reply({description:'',translated:false,sourceStatus});
   const shortened=description.length>4000;
   description=description.slice(0,4000);
 
   const japanese=/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(description);
   const korean=/\p{Script=Hangul}/u.test(description);
   const latin=/[A-Za-z]/.test(description);
+  let translationStatus='unavailable';
   let translated=!japanese && (korean || !latin);
   if(!translated && env.AI) {
     try {
@@ -144,9 +146,9 @@ async function describeListing(req,env,ctx,product,stored) {
         }).join('').trim();
         translated=true;
       }
-    } catch { /* Keep the published description readable if translation is temporarily unavailable. */ }
+    } catch(error) {translationStatus=error.name;}
   }
-  const result={description,translated,shortened};
+  const result={description,translated,shortened,...(!translated?{translationStatus}:{})};
   if(translated) ctx.waitUntil(caches.default.put(cacheRequest,new Response(JSON.stringify(result),{
     headers:{'Content-Type':'application/json','Cache-Control':'max-age=21600'}
   })));
