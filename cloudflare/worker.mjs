@@ -44,6 +44,39 @@ async function encryptPush(keys, payload) {
   const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv:nonce},key,concat(utf8(JSON.stringify(payload)),Uint8Array.of(2)));
   return concat(salt,Uint8Array.of(0,0,16,0,65),as,new Uint8Array(cipher));
 }
+function favoriteProduct(value) {
+  if(typeof value!=='string' || value.length>2048) return null;
+  let url;
+  try {url=new URL(value.trim());} catch {return null;}
+  if(url.protocol!=='https:' || url.username || url.password || url.port) return null;
+  if(url.hostname==='jp.mercari.com') {
+    const item=url.pathname.match(/^\/item\/(m\d+)\/?$/);
+    return item ? {url:url.origin+'/item/'+item[1],label:'메루카리 상품 '+item[1]} : null;
+  }
+  const catalogue=url.hostname==='order.mandarake.co.jp' && url.pathname==='/order/detailPage/item';
+  const auction=url.hostname==='ekizo.mandarake.co.jp' && url.pathname==='/auction/item/itemInfoJa.html';
+  if(!catalogue && !auction) return null;
+  const param=catalogue?'itemCode':'index';
+  const id=url.searchParams.get(param);
+  if(!/^\d{1,24}$/.test(id || '')) return null;
+  const label=catalogue?'만다라케 상품 ':'만다라케 경매 ';
+  return {url:url.origin+url.pathname+'?'+param+'='+id,label:label+id};
+}
+async function favoritePageTitle(product) {
+  try {
+    const response=await fetch(product.url,{redirect:'error',signal:AbortSignal.timeout(5000)});
+    if(!response.ok || !response.headers.get('Content-Type')?.includes('text/html')) return product.label;
+    let title='', price;
+    const read=new HTMLRewriter()
+      .on('meta[property="og:title"]',{element(tag){title=tag.getAttribute('content') || '';}})
+      .on('meta[property="product:price:amount"],meta[itemprop="price"]', {
+        element(tag){price=tag.getAttribute('content');}
+      });
+    await read.transform(response).arrayBuffer();
+    title=title.trim().slice(0,350);
+    return title ? title+(/^\d+$/.test(price || '') ? ' ('+Number(price).toLocaleString('en-US')+'円)' : '') : product.label;
+  } catch {return product.label;}
+}
 async function listingNotice(row,testId) {
   const url=new URL(row.url);
   const match=row.title.match(/\s*\(([\d,]+)円\)$/);
@@ -261,14 +294,24 @@ export default {async fetch(req, env) {
     await sql('INSERT INTO watches(owner,shop,keyword) VALUES(?,?,?) ON CONFLICT(owner,shop,keyword) DO UPDATE SET active=1',owner,b.shop,b.keyword.trim()).run();
   else if (path === '/toggle') await sql('UPDATE watches SET active=? WHERE id=? AND owner=?',b.active ? 1:0,b.id,owner).run();
   else if (path === '/delete') await sql('DELETE FROM watches WHERE owner=? AND id=?',owner,b.id).run();
-  else if (path === '/favorite' && b.add) {
-    const listing=await sql('SELECT m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,b.url).first();
-    if(!listing) return reply({},404);
-    const writes=[sql('INSERT OR IGNORE INTO favorites(owner,url,title,saved_at) VALUES(?,?,?,unixepoch())',owner,b.url,listing.title)];
-    if(/^https:\/\/order\.mandarake\.co\.jp\/order\/detailPage\/item\?itemCode=\d+$/.test(b.url)) {
-      writes.push(sql('INSERT OR IGNORE INTO favorite_stock(owner,url,available,checked_at) VALUES(?,?,(SELECT available FROM nakano_catalogue WHERE url=?),0)',owner,b.url,b.url));
+  else if (path === '/favorite-link' || (path === '/favorite' && b.add)) {
+    const manual=path==='/favorite-link';
+    const product=manual ? favoriteProduct(b.url) : null;
+    if(manual && !product) return reply({error:'unsupported_product_link'},400);
+    const url=manual ? product.url : b.url;
+    if(manual && await sql('SELECT 1 FROM favorites WHERE owner=? AND url=?',owner,url).first())
+      return reply({added:false});
+    const listing=await sql('SELECT m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,url).first();
+    if(!manual && !listing) return reply({},404);
+    const title=listing?.title || await favoritePageTitle(product);
+    const writes=[sql('INSERT OR IGNORE INTO favorites(owner,url,title,saved_at) VALUES(?,?,?,unixepoch())',owner,url,title)];
+    if(/^https:\/\/order\.mandarake\.co\.jp\/order\/detailPage\/item\?itemCode=\d+$/.test(url)) {
+      writes.push(sql('INSERT OR IGNORE INTO favorite_stock(owner,url,available,checked_at) VALUES(?,?,(SELECT available FROM nakano_catalogue WHERE url=?),0)',owner,url,url));
     }
-    try {await env.DB.batch(writes);}
+    try {
+      const [saved]=await env.DB.batch(writes);
+      return reply({added:saved.meta.changes>0});
+    }
     catch(error) {
       const diagnostic=String(error.message).match(/(?:NOT NULL constraint failed: [a-z_.]+|foreign key mismatch|FOREIGN KEY constraint failed|no such (?:table|column): [a-z_.]+|SQLITE_[A-Z_]+)/i);
       console.error('Favorite write failed:',error.message);
