@@ -108,3 +108,12 @@ WHEN OLD.available=0 AND NEW.available=1 BEGIN
   INSERT INTO restock_push(endpoint,owner,url) SELECT endpoint,NEW.owner,NEW.url FROM push_devices WHERE owner=NEW.owner;
 END;
 UPDATE matches SET visible=2 WHERE visible=0 AND watch_id IN (SELECT id FROM watches WHERE shop='nakano');
+
+CREATE TABLE IF NOT EXISTS nakano_catalogue (
+  url TEXT PRIMARY KEY, available INTEGER NOT NULL, image TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS seed_favorite_stock AFTER INSERT ON favorite_stock
+WHEN EXISTS(SELECT 1 FROM nakano_catalogue WHERE url=NEW.url) BEGIN
+  UPDATE favorite_stock SET available=(SELECT available FROM nakano_catalogue WHERE url=NEW.url)
+    WHERE owner=NEW.owner AND url=NEW.url;
+END;
