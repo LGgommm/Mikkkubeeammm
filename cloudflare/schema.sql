@@ -86,3 +86,25 @@ CREATE TRIGGER IF NOT EXISTS resume_mercari_watch AFTER UPDATE OF active ON watc
 WHEN NEW.shop='mercari' AND OLD.active=0 AND NEW.active=1 BEGIN
   UPDATE mercari_sessions SET started_at=unixepoch() WHERE watch_id=NEW.id;
 END;
+
+CREATE TABLE IF NOT EXISTS favorite_stock (
+  owner TEXT NOT NULL, url TEXT NOT NULL, available INTEGER, checked_at INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(owner,url), FOREIGN KEY(owner,url) REFERENCES favorites(owner,url) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS stock_by_url ON favorite_stock(url,checked_at);
+CREATE TABLE IF NOT EXISTS restock_push (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint TEXT NOT NULL REFERENCES push_devices(endpoint) ON DELETE CASCADE,
+  owner TEXT NOT NULL,url TEXT NOT NULL,retry_after INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY(owner,url) REFERENCES favorite_stock(owner,url) ON DELETE CASCADE
+);
+CREATE TRIGGER IF NOT EXISTS track_catalogue_favorite AFTER INSERT ON favorites
+WHEN NEW.url LIKE 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=%' BEGIN
+  INSERT OR IGNORE INTO favorite_stock(owner,url) VALUES(NEW.owner,NEW.url);
+END;
+INSERT OR IGNORE INTO favorite_stock(owner,url) SELECT owner,url FROM favorites
+WHERE url LIKE 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=%';
+CREATE TRIGGER IF NOT EXISTS notify_restock AFTER UPDATE OF available ON favorite_stock
+WHEN OLD.available=0 AND NEW.available=1 BEGIN
+  INSERT INTO restock_push(endpoint,owner,url) SELECT endpoint,NEW.owner,NEW.url FROM push_devices WHERE owner=NEW.owner;
+END;
+UPDATE matches SET visible=2 WHERE visible=0 AND watch_id IN (SELECT id FROM watches WHERE shop='nakano');
