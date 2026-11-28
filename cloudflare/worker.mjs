@@ -293,6 +293,13 @@ async function drainDigests(db) {
     ]);
   }));
 }
+async function readLists(db,sql,owner) {
+  const [w,h,f] = await db.batch([
+    sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
+    sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at,c.image,c.available AS catalogue_available FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url LEFT JOIN nakano_catalogue c ON c.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
+    sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,c.image,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
+  return {watches:w.results,hits:h.results,favorites:f.results};
+}
 const origin = 'https://lggommm.github.io';
 function reply(data, status = 200) {
   return Response.json(data, {status, headers:{
@@ -309,6 +316,24 @@ export default {async fetch(req, env, ctx) {
   const sql = (query,...params) => env.DB.prepare(query).bind(...params);
   if (path.startsWith('/collector/')) {
     if (!env.COLLECTOR_TOKEN || key !== env.COLLECTOR_TOKEN) return reply({},403);
+    if (path==='/collector/list-health' && req.method==='GET') {
+      try {
+        await sql('SELECT 1 AS ready').first();
+        await readLists(env.DB,sql,'0'.repeat(64));
+        return reply({ready:true});
+      } catch(error) {
+        const message=[error?.message,error?.cause?.message].filter(Boolean).join(' ');
+        const reasons=[
+          ['daily_read_limit',/row read limit/i],
+          ['daily_write_limit',/row write limit/i],
+          ['schema_error',/no such table|no such column|syntax error/i],
+          ['database_busy',/busy|locked|overload/i],
+          ['database_unavailable',/internal|unavailable|timeout|network/i],
+          ['binding_error',/Cannot read properties|not a function/i]
+        ];
+        return reply({ready:false,reason:reasons.find(([,pattern])=>pattern.test(message))?.[0] || 'unexpected_error'},503);
+      }
+    }
     if (path==='/collector/push-check') {
       try {
         const pair=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
@@ -444,11 +469,7 @@ export default {async fetch(req, env, ctx) {
   }
   if (path === '/state' && req.method === 'GET') {
     try {
-      const [w,h,f] = await env.DB.batch([
-        sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
-        sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at,c.image,c.available AS catalogue_available FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url LEFT JOIN nakano_catalogue c ON c.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
-        sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,c.image,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
-      return reply({watches:w.results,hits:h.results,favorites:f.results});
+      return reply(await readLists(env.DB,sql,owner));
     } catch(error) {
       console.error('Failed to read market lists',error);
       return reply({error:'lists_unavailable'},503);

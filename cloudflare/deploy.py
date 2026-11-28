@@ -49,6 +49,15 @@ state_probe_key = secrets.token_hex(32)
 pages_origin = "https://lggommm.github.io"
 for attempt in range(15):
     try:
+        health_req = urllib.request.Request(url+"/collector/list-health",headers={"Authorization": "Bearer " + key, "User-Agent": "MarketAlerts/1.0 (deployment verification)", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(health_req,timeout=15) as response:
+                assert json.load(response).get("ready") is True
+        except urllib.error.HTTPError as error:
+            if error.code == 503 and error.headers.get_content_type() == "application/json":
+                health = json.load(error)
+                print("Market list database check:", health.get("reason"), flush=True)
+            raise
         req = urllib.request.Request(url+"/collector/watches",headers={"Authorization": "Bearer " + key, "User-Agent": "MarketAlerts/1.0 (deployment verification)", "Accept": "application/json"})
         with urllib.request.urlopen(req,timeout=15) as response:
             assert isinstance(json.load(response),list)
