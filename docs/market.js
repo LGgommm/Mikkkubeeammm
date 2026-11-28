@@ -60,6 +60,7 @@ function product(row) {
     updateListingAge(time);
     source.append(' ',time);
   }
+  if(row.catalogue_available===0) source.append(' · 품절');
   if('stock_available' in row && host==='order.mandarake.co.jp') {
     source.append(' · '+(row.stock_available===0?'품절 · 재입고 알림 대기':row.stock_available===1?'마지막 확인 시 재고 있음':'재입고 확인 대기'));
   }
@@ -74,6 +75,7 @@ function product(row) {
   }
   const url=new URL(row.url);
   const item=url.pathname.match(/^\/item\/(m\d+)$/);
+  if (row.image && url.hostname==='order.mandarake.co.jp') photo(row.image);
   if (url.hostname==='jp.mercari.com' && item) photo('https://static.mercdn.net/item/detail/orig/photos/'+item[1]+'_1.jpg');
   if (url.hostname==='ekizo.mandarake.co.jp') {
     const observer=new IntersectionObserver(entries=>{
@@ -358,7 +360,7 @@ function renderFeed(){
   });
   const saved=feedSaved;
   const empty=active ? (unknown.length?'가격 확인 중…':'선택한 조건에 맞는 매물이 없어요.') : '첫 수집 이후 발견한 새 매물이 여기에 표시돼요.';
-  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,saved.has(r.url)])]);
+  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.catalogue_available,saved.has(r.url)])]);
   if(el('filter-done')) el('filter-done').textContent=hits.length+'개 보기';
   if(!inverted) void fillAuctionPrices([...new Set(unknown)]);
 }
@@ -393,7 +395,7 @@ async function refresh() {
   feedSaved=saved;
   availableWords=[...new Set([...groups.keys(),...hits.map(row=>row.keyword)].filter(Boolean))];
   renderFeed();
-  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.stock_available]));
+  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }
