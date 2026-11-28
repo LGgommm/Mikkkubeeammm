@@ -45,7 +45,8 @@
   .filter-panel .filter-range,.filter-panel .filter-choices {padding:2px 12px 12px}
   .filter-panel input,.filter-panel .filter-choices button:not([aria-pressed=true]) {background:var(--card)}
   @media(prefers-reduced-motion:reduce){.filter-panel,.filter-section>button::after {transition:none}}
-  .filter-range input {min-width:0;width:40%}
+  .filter-range input {min-width:0;width:40%;-webkit-tap-highlight-color:transparent}
+  #filter-dialog .filter-range input:focus {outline:none;box-shadow:none;text-decoration:underline;text-underline-offset:3px}
   .filter-choices {flex-wrap:wrap}
   .filter-choices button {min-height:34px;border-radius:999px;overflow-wrap:anywhere;max-width:100%}
   #filter-dialog footer {justify-content:space-between;margin-top:18px}
