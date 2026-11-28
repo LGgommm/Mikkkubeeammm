@@ -136,10 +136,12 @@ export default {async fetch(req, env) {
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
     if (path === '/collector/results' && req.method === 'POST') {
-      const {id,rows} = await req.json();
+      const {id,rows,posted={}} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
       const insert = rows.map(([url,title]) => sql('INSERT OR IGNORE INTO matches(watch_id,url,title,visible) SELECT id,?,?,initialized FROM watches WHERE id=? AND active=1',url,title,id));
-      await env.DB.batch([...insert,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
+      const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
+        .map(([url])=>sql('INSERT OR IGNORE INTO listing_times(url,posted_at) VALUES(?,?)',url,posted[url]));
+      await env.DB.batch([...insert,...times,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
       await drain(env.DB);
       return reply({});
     }
@@ -187,8 +189,8 @@ export default {async fetch(req, env) {
   if (path === '/state' && req.method === 'GET') {
     const [w,h,f] = await env.DB.batch([
       sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
-      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.visible=1 ORDER BY m.found_at DESC LIMIT 300',owner),
-      sql('SELECT url,title FROM favorites WHERE owner=? ORDER BY saved_at DESC',owner)]);
+      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url WHERE w.owner=? AND m.visible=1 ORDER BY m.found_at DESC LIMIT 300',owner),
+      sql('SELECT f.url,f.title,t.posted_at,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
     return reply({watches:w.results,hits:h.results,favorites:f.results});
   }
   if (req.method !== 'POST') return reply({},405);
