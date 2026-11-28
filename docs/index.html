@@ -25,6 +25,21 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="stylesheet" href="./market.css?v=27">
 <style>
+  .feed-tools,#filter-dialog header,#filter-dialog footer,.filter-range,.filter-choices {display:flex;align-items:center;gap:8px}
+  .feed-tools {margin-left:auto}
+  #feed-filter {min-height:32px;padding:4px 12px;border-radius:999px}
+  #feed-filter.active,#filter-done,.filter-choices button[aria-pressed=true] {background:var(--blue);color:var(--card)}
+  #filter-dialog {width:min(380px,calc(100% - 32px));max-height:80dvh;padding:18px;border:0;border-radius:22px;color:var(--ink);background:var(--card)}
+  #filter-dialog::backdrop {background:#0007}
+  #filter-dialog header {flex-direction:row;justify-content:space-between}
+  #filter-title {font-size:18px;color:var(--ink)}
+  #filter-close {min-height:34px;width:34px;padding:0;border-radius:50%;font-size:22px}
+  #filter-dialog fieldset {margin:14px 0;border:0;padding:0;min-width:0}
+  #filter-dialog legend {font-weight:600;margin-bottom:5px}
+  .filter-range input {min-width:0;width:40%}
+  .filter-choices {flex-wrap:wrap}
+  .filter-choices button {min-height:34px;border-radius:999px;overflow-wrap:anywhere;max-width:100%}
+  #filter-dialog footer {justify-content:space-between;margin-top:18px}
   .list-controls { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:20px; }
   .page-tabs { display:flex; gap:8px; }
   #add-keyword { flex:none; width:44px; height:44px; padding:0; border:1px solid var(--fill); border-radius:50%; display:grid; place-items:center; background:var(--card); color:var(--ink); }
@@ -121,9 +136,16 @@
 <button id="add-keyword" type="button" aria-label="키워드 관리" aria-haspopup="dialog" aria-controls="keyword-dialog"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 </div>
 <div class="page-track">
-<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><small id="status" role="status"></small></div><ul class="products" id="hits"></ul></section>
+<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" type="button" aria-haspopup="dialog" aria-controls="filter-dialog">필터</button></span></div><ul class="products" id="hits"></ul></section>
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
 </div>
+<dialog id="filter-dialog" aria-labelledby="filter-title">
+  <header><h2 id="filter-title">매물 필터</h2><button type="button" id="filter-close" aria-label="필터 닫기">×</button></header>
+  <fieldset><legend>가격 (엔)</legend><div class="filter-range"><input id="filter-min" type="number" min="0" inputmode="numeric" aria-label="최저 가격" placeholder="최저가"><span>~</span><input id="filter-max" type="number" min="0" inputmode="numeric" aria-label="최고 가격" placeholder="최고가"></div></fieldset>
+  <fieldset><legend>상점 선택</legend><div id="filter-shops" class="filter-choices"></div></fieldset>
+  <fieldset><legend>키워드 선택</legend><div id="filter-words" class="filter-choices"></div></fieldset>
+  <footer><button type="button" id="filter-reset">초기화</button><button type="button" id="filter-done">결과 보기</button></footer>
+</dialog>
 <dialog id="keyword-dialog" aria-label="키워드 관리">
   <label for="word" tabindex="-1" autofocus>키워드 입력</label>
   <form id="form">
@@ -158,7 +180,7 @@
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=keep-keywords-open"></script>
+<script src="./config.js"></script><script src="./market.js?v=feed-filters"></script>
 <script>
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');
