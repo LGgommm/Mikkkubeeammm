@@ -106,6 +106,20 @@ async function drain(db) {
     await db.prepare('DELETE FROM listing_push WHERE id=?').bind(job.id).run();
   }));
 }
+async function drainRestocks(db) {
+  const jobs=await db.prepare('UPDATE restock_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM restock_push WHERE retry_after<=unixepoch() ORDER BY id LIMIT 6) RETURNING id,owner,endpoint,url').all();
+  await Promise.allSettled(jobs.results.map(async job=>{
+    const row=await db.prepare('SELECT f.title,f.url FROM favorites f JOIN favorite_stock s USING(owner,url) JOIN push_devices d ON d.owner=f.owner WHERE f.owner=? AND f.url=? AND d.endpoint=? AND s.available=1').bind(job.owner,job.url,job.endpoint).first();
+    if(row) {
+      const notice=await listingNotice({...row,keyword:'만다라케 나카노점'},null);
+      notice.title='찜한 상품 재입고 · 만다라케 나카노점';
+      notice.tag='restock|'+job.id;
+      const result=await deliver(db,job,notice);
+      if(!result.accepted) return;
+    }
+    await db.prepare('DELETE FROM restock_push WHERE id=?').bind(job.id).run();
+  }));
+}
 const origin = 'https://lggommm.github.io';
 function reply(data, status = 200) {
   return Response.json(data, {status, headers:{
@@ -134,6 +148,23 @@ export default {async fetch(req, env) {
         return reply(check);
       } catch(e) {return reply({error:e.name,description:String(e.message).slice(0,180)});}
     }
+    if(path==='/collector/restocks' && req.method==='GET') {
+      await drainRestocks(env.DB);
+      return reply((await sql('SELECT url FROM favorite_stock GROUP BY url ORDER BY MIN(checked_at),url LIMIT 12').all()).results);
+    }
+    if(path==='/collector/restocks' && req.method==='POST') {
+      const {observations}=await req.json();
+      if(!Array.isArray(observations) || observations.length>12) return reply({},400);
+      const updates=[];
+      for(const {url,available,at} of observations) {
+        if(typeof url!=='string' || !Number.isSafeInteger(at) || at>Date.now()+60000 ||
+           (available!==null && typeof available!=='boolean')) return reply({},400);
+        updates.push(sql('UPDATE favorite_stock SET available=COALESCE(?,available),checked_at=? WHERE url=? AND checked_at<?',available===null?null:Number(available),at,url,at));
+      }
+      if(updates.length) await env.DB.batch(updates);
+      await drainRestocks(env.DB);
+      return reply({});
+    }
     if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
@@ -141,7 +172,7 @@ export default {async fetch(req, env) {
       const {id,rows,posted={}} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
       const insert = rows.map(([url,title]) => sql(`INSERT OR IGNORE INTO matches(watch_id,url,title,visible)
-        SELECT w.id,?,?,CASE WHEN w.shop='mercari' THEN 1 ELSE w.initialized END FROM watches w
+        SELECT w.id,?,?,CASE WHEN w.shop='mercari' THEN 1 WHEN w.initialized=0 THEN 2 ELSE 1 END FROM watches w
         WHERE w.id=? AND w.active=1 AND (w.shop<>'mercari' OR ${freshMercari('?')})`,
         url,title,id,Number.isSafeInteger(posted[url]) ? posted[url] : null));
       const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
@@ -194,8 +225,8 @@ export default {async fetch(req, env) {
   if (path === '/state' && req.method === 'GET') {
     const [w,h,f] = await env.DB.batch([
       sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
-      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url WHERE w.owner=? AND m.visible=1 ORDER BY m.found_at DESC LIMIT 300',owner),
-      sql('SELECT f.url,f.title,t.posted_at,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
+      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
+      sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
     return reply({watches:w.results,hits:h.results,favorites:f.results});
   }
   if (req.method !== 'POST') return reply({},405);
@@ -224,7 +255,7 @@ export default {async fetch(req, env) {
     await sql('INSERT INTO watches(owner,shop,keyword) VALUES(?,?,?) ON CONFLICT(owner,shop,keyword) DO UPDATE SET active=1',owner,b.shop,b.keyword.trim()).run();
   else if (path === '/toggle') await sql('UPDATE watches SET active=? WHERE id=? AND owner=?',b.active ? 1:0,b.id,owner).run();
   else if (path === '/delete') await sql('DELETE FROM watches WHERE owner=? AND id=?',owner,b.id).run();
-  else if (path === '/favorite' && b.add) await sql('INSERT OR IGNORE INTO favorites(owner,url,title) SELECT ?,m.url,m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible=1 LIMIT 1',owner,owner,b.url).run();
+  else if (path === '/favorite' && b.add) await sql('INSERT OR IGNORE INTO favorites(owner,url,title) SELECT ?,m.url,m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,owner,b.url).run();
   else if (path === '/favorite') await sql('DELETE FROM favorites WHERE owner=? AND url=?',owner,b.url).run();
   else return reply({},400);
   return reply({});
