@@ -199,10 +199,18 @@ function watchCard([keyword, rows]) {
   const pause=rows.some(row=>row.active);
   async function apply(targets, path, body) {
     const results=await Promise.allSettled(targets.map(row=>api(path,body(row))));
-    el('watch-feedback').textContent=results.some(result=>result.status==='rejected')?'일부 상점에 반영하지 못했어요. 목록을 확인해 주세요.':'';
+    const failed=results.some(result=>result.status==='rejected');
+    el('watch-feedback').textContent=failed?'일부 상점에 반영하지 못했어요. 목록을 확인해 주세요.':'';
+    return !failed;
   }
   const toggle=watchControl(keyword+(pause?' 일시정지':' 재개'),pause?'M5 3v10M11 3v10':'M5 3l8 5-8 5z',
-    ()=>apply(rows.filter(row=>Boolean(row.active)===pause),'/toggle',row=>({id:row.id,active:!pause})));
+    async ()=>{
+      toggle.disabled=true;
+      try {
+        const ok=await apply(rows.filter(row=>Boolean(row.active)===pause),'/toggle',row=>({id:row.id,active:!pause}));
+        if(ok && pause) await closeKeywords();
+      } finally {toggle.disabled=false;}
+    });
   const remove=watchControl(keyword+' 삭제','M4 4l8 8M12 4l-8 8',()=>{
     if(confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
       return apply(rows,'/delete',row=>({id:row.id}));
@@ -223,6 +231,13 @@ function watchCard([keyword, rows]) {
   }
   return [logos,name,toggle,remove,options,panel];
 }
+const productSnapshots=new Map();
+function productList(id,rows,make,empty,signature) {
+  const snapshot=JSON.stringify(signature);
+  if(productSnapshots.get(id)===snapshot) return;
+  list(id,rows,make,empty);
+  productSnapshots.set(id,snapshot);
+}
 async function refresh() {
   const {watches,hits,favorites}=await api('/state');
   const saved=new Set(favorites.map(row=>row.url));
@@ -235,8 +250,8 @@ async function refresh() {
     el('editor-parking').append(form);
     list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
   }
-  list('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.');
-  list('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.');
+  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.',hits.map(r=>[r.url,r.title,saved.has(r.url)]));
+  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title]));
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }
 async function run(fn) {
