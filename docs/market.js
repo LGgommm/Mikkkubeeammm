@@ -28,6 +28,11 @@ function list(id,rows,make,empty) {
     const li=document.createElement('li'); li.append(...make(row)); return li;
   }):[empty]));
 }
+function updateListingAge(time) {
+  const minutes=Math.max(0,Math.floor((Date.now()/1000-Number(time.dataset.seconds))/60));
+  const age=minutes<1?'방금':minutes<60?minutes+'분 전':minutes<1440?Math.floor(minutes/60)+'시간 전':Math.floor(minutes/1440)+'일 전';
+  time.textContent=age+' '+time.dataset.kind;
+}
 function product(row) {
   const a=document.createElement('a');
   a.href=row.url;
@@ -45,7 +50,16 @@ function product(row) {
   const source=document.createElement('small');
   source.className='source';
   const host=new URL(row.url).hostname;
-  source.textContent=host==='jp.mercari.com' ? shops.mercari : host==='ekizo.mandarake.co.jp' ? shops.nakano : host;
+  source.textContent=host==='jp.mercari.com' ? shops.mercari : ['ekizo.mandarake.co.jp','order.mandarake.co.jp'].includes(host) ? shops.nakano : host;
+  const seconds=row.posted_at || row.found_at;
+  if(seconds>0) {
+    const time=document.createElement('time');
+    time.dataset.seconds=seconds;
+    time.dataset.kind=row.posted_at?'등록':'발견';
+    time.dateTime=new Date(seconds*1000).toISOString();
+    updateListingAge(time);
+    source.append(' ',time);
+  }
   a.append(thumb,title,price,source);
   function photo(url) {
     const img=new Image();
@@ -256,8 +270,9 @@ async function refresh() {
     el('editor-parking').append(form);
     list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
   }
-  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.',hits.map(r=>[r.url,r.title,saved.has(r.url)]));
-  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title]));
+  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.',hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,saved.has(r.url)]));
+  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at]));
+  document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }
 async function run(fn) {
