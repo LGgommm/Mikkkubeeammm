@@ -127,9 +127,11 @@ async def run():
     for watch in response.json():
         shop, word = watch['shop'], watch['keyword']
         try:
+            posted = {}
             if shop == 'mercari':
                 result = await client.search(word, sort_by=Search.SortBy.SORT_CREATED_TIME, status=[Search.Status.STATUS_ON_SALE])
                 rows = [['https://jp.mercari.com/item/' + x.id_, f'{x.name} ({x.price:,}円)'] for x in result.items if re.fullmatch(r'm\d+', x.id_)]
+                posted = {'https://jp.mercari.com/item/' + x.id_: int(x.created.timestamp()) for x in result.items if x.created}
             else:
                 if feed is None:
                     feed = nakano()
@@ -162,7 +164,7 @@ async def run():
                     if amount is not None and (low is None or amount >= low) and (high is None or amount <= high):
                         filtered.append([url, title])
                 rows = filtered
-            session.post(base + '/collector/results', json={'id':watch['id'], 'rows':rows}, timeout=30).raise_for_status()
+            session.post(base + '/collector/results', json={'id':watch['id'], 'rows':rows, 'posted':posted}, timeout=30).raise_for_status()
         except Exception as error:
             print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
             failed = True
