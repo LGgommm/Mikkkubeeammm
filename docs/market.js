@@ -97,20 +97,26 @@ function product(row,listId) {
   description.append(heading,text);
   card.append(toggle,thumb,title,a,price,source,description);
 
-  let loading=false;
+  let loading=false, detailRetry;
   function showExpanded(open) {
     card.classList.toggle('expanded',open);
     toggle.setAttribute('aria-expanded',String(open));
     toggle.setAttribute('aria-label',(open?'접기: ':'상세 보기: ')+title.textContent);
     toggleLabel.textContent=open?'접기':'';
     a.hidden=description.hidden=!open;
+    clearTimeout(detailRetry);
     if(!open || loading) return;
     loading=true;
     heading.textContent='상품 설명';
     text.textContent='상품 설명 불러오는 중…';
     listingDetails(row.url).then(detail=>{
       if(!detail.description) {
-        text.textContent='원본 페이지에서 상품 설명을 확인해 주세요.';
+        text.textContent=detail.pending?'상품 설명을 확인하고 있어요. 잠시 후 자동으로 다시 확인해요.':'원본 페이지에서 상품 설명을 확인해 주세요.';
+        if(detail.pending && card.classList.contains('expanded')) {
+          detailRetry=setTimeout(()=>{
+            if(card.isConnected && card.classList.contains('expanded')) showExpanded(true);
+          },30000);
+        }
         return;
       }
       if(!detail.translated) heading.textContent='상품 설명 (원문)';

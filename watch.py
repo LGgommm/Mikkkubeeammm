@@ -215,6 +215,37 @@ def check_favorites(session,base,stock_feed,rows):
     if observations:
         session.post(base+'/collector/restocks',json={'observations':observations},timeout=30).raise_for_status()
 
+async def collect_mercari_descriptions(session,base,client):
+    route=base+'/collector/mercari-descriptions'
+    response=session.get(route,timeout=12)
+    if response.status_code==404: return
+    response.raise_for_status()
+    urls=response.json()
+    if not urls: return
+    def page_description(url):
+        try:
+            result=page(url)
+        except requests.RequestException:
+            return None
+        if result.url.split('?',1)[0]!=url:
+            return None
+        source=BeautifulSoup(result.content,'html.parser',from_encoding='utf-8')
+        description=source.select_one('[data-testid="description"]')
+        return description.get_text(' ',strip=True) if description else None
+
+    async def read(url):
+        description=await asyncio.to_thread(page_description,url)
+        if not description:
+            try:
+                listing=await asyncio.wait_for(client.item(url.rsplit('/',1)[-1]),timeout=8)
+                description=listing.description if listing else None
+            except Exception:
+                description=None
+        return {'url':url,'description':description}
+    for offset in range(0,len(urls),3):
+        items=await asyncio.gather(*(read(url) for url in urls[offset:offset+3]))
+        session.post(route,json={'items':items},timeout=12).raise_for_status()
+
 async def run():
     base = os.environ['MARKET_API'].rstrip('/')
     session = requests.Session()
@@ -298,6 +329,7 @@ async def run():
         except (requests.RequestException,ValueError,KeyError):
             pass
     await asyncio.to_thread(check_favorites,session,base,stock_feed,favorites)
+    await collect_mercari_descriptions(session,base,client)
     if failed:
         raise SystemExit(1)
 
