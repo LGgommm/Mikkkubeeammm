@@ -143,3 +143,14 @@ INSERT OR IGNORE INTO push_digest_schedule(endpoint,due_at)
 SELECT endpoint,unixepoch()+600 FROM (
   SELECT endpoint FROM listing_push UNION SELECT endpoint FROM restock_push
 );
+
+CREATE TRIGGER IF NOT EXISTS clear_empty_listing_digest AFTER DELETE ON listing_push
+WHEN NOT EXISTS(SELECT 1 FROM listing_push WHERE endpoint=OLD.endpoint)
+ AND NOT EXISTS(SELECT 1 FROM restock_push WHERE endpoint=OLD.endpoint) BEGIN
+  DELETE FROM push_digest_schedule WHERE endpoint=OLD.endpoint;
+END;
+CREATE TRIGGER IF NOT EXISTS clear_empty_restock_digest AFTER DELETE ON restock_push
+WHEN NOT EXISTS(SELECT 1 FROM listing_push WHERE endpoint=OLD.endpoint)
+ AND NOT EXISTS(SELECT 1 FROM restock_push WHERE endpoint=OLD.endpoint) BEGIN
+  DELETE FROM push_digest_schedule WHERE endpoint=OLD.endpoint;
+END;
