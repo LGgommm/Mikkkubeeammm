@@ -50,6 +50,12 @@
   .filter-choices {flex-wrap:wrap}
   .filter-choices button {min-height:34px;border-radius:999px;overflow-wrap:anywhere;max-width:100%}
   #filter-dialog footer {justify-content:space-between;margin-top:18px}
+  .favorite-link-card {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-bottom:20px;padding:14px;border-radius:18px;background:var(--card)}
+  .favorite-link-card label {font-weight:600}
+  .favorite-link-fields {display:flex;gap:8px}
+  .favorite-link-fields input {flex:1;min-width:0;width:0}
+  .favorite-link-fields button {flex:none;border-radius:999px}
+  #favorite-link-status:empty {display:none}
   .list-controls { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:20px; }
   .page-tabs { display:flex; gap:8px; }
   #add-keyword { flex:none; width:44px; height:44px; padding:0; border:1px solid var(--fill); border-radius:50%; display:grid; place-items:center; background:var(--card); color:var(--ink); }
@@ -149,7 +155,16 @@
 </div>
 <div class="page-track">
 <section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" type="button" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
-<section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul></section>
+<section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert><div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul>
+  <form id="favorite-link-form" class="favorite-link-card">
+    <label for="favorite-link-url">상품 링크로 찜 추가</label>
+    <div class="favorite-link-fields">
+      <input id="favorite-link-url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="상품 링크 붙여 넣기" maxlength="2048" required>
+      <button type="submit">추가</button>
+    </div>
+    <small id="favorite-link-status" role="status"></small>
+  </form>
+</section>
 </div>
 <dialog id="filter-dialog" aria-labelledby="filter-title">
   <header><h2 id="filter-title">매물 필터</h2><button type="button" id="filter-close" aria-label="필터 닫기">×</button></header>
@@ -192,7 +207,7 @@
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=nakano-stock"></script>
+<script src="./config.js"></script><script src="./market.js?v=add-favorite-link"></script>
 <script>
   for(const bar of document.querySelectorAll('.filter-section>button')) {
     const panel=document.getElementById(bar.getAttribute('aria-controls'));
