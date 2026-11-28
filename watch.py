@@ -107,9 +107,15 @@ def arrivals(stock,terms=()):
             continue
         url = DETAIL+code
         stock[url] = {'available':int(quantity)>0,'image':item.get('thumbnail') or ''}
-        description = item.get('detail') or item.get('condition')
-        if isinstance(description,str) and description:
-            stock[url]['description'] = BeautifulSoup(description,'html.parser').get_text('\n',strip=True)[:6000]
+        descriptions = []
+        for field in ('detail', 'condition'):
+            raw = item.get(field)
+            if isinstance(raw,str) and raw.strip():
+                text = BeautifulSoup(raw,'html.parser').get_text('\n',strip=True)
+                if text and not any(text in previous for previous in descriptions):
+                    descriptions.append(text)
+        if descriptions:
+            stock[url]['description'] = '\n\n'.join(descriptions)[:6000]
         if item.get('title'):
             price = str(item.get('price','')).replace(',','')
             rows[url] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
@@ -231,7 +237,11 @@ async def collect_mercari_descriptions(session,base,client):
             return None
         source=BeautifulSoup(result.content,'html.parser',from_encoding='utf-8')
         description=source.select_one('[data-testid="description"]')
-        return description.get_text(' ',strip=True) if description else None
+        if not description:
+            return None
+        for line_break in description.find_all('br'):
+            line_break.replace_with('\n')
+        return description.get_text().strip()
 
     async def read(url):
         description=await asyncio.to_thread(page_description,url)
@@ -253,6 +263,10 @@ async def run():
     response = session.get(base + '/collector/watches', timeout=30)
     response.raise_for_status()
     client = Mercapi()
+    try:
+        await collect_mercari_descriptions(session,base,client)
+    except requests.RequestException as error:
+        print(f"Mercari description collection: {type(error).__name__}",flush=True)
     failed = False
     watches=response.json()
     favorites=session.get(base+'/collector/restocks',timeout=30)
@@ -329,7 +343,6 @@ async def run():
         except (requests.RequestException,ValueError,KeyError):
             pass
     await asyncio.to_thread(check_favorites,session,base,stock_feed,favorites)
-    await collect_mercari_descriptions(session,base,client)
     if failed:
         raise SystemExit(1)
 

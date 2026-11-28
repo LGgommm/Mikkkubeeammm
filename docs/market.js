@@ -35,17 +35,19 @@ function updateListingAge(time) {
 }
 const expandedProducts=new Set();
 const productDetails=new Map();
-function listingDetails(url) {
-  if(!productDetails.has(url)) {
-    const request=api('/listing-details?url='+encodeURIComponent(url),undefined,AbortSignal.timeout(20000))
+function listingDetails(url,original=false) {
+  const key=url+(original?' original':' translation');
+  if(!productDetails.has(key)) {
+    const request=api('/listing-details?url='+encodeURIComponent(url)+(original?'&original=1':''),
+      undefined,AbortSignal.timeout(original?10000:35000))
       .then(detail=>{
-        if(!detail.description || !detail.translated) productDetails.delete(url);
+        if(!detail.description || (!detail.translated && !detail.needsTranslation)) productDetails.delete(key);
         return detail;
       })
-      .catch(error=>{productDetails.delete(url);throw error;});
-    productDetails.set(url,request);
+      .catch(error=>{productDetails.delete(key);throw error;});
+    productDetails.set(key,request);
   }
-  return productDetails.get(url);
+  return productDetails.get(key);
 }
 function product(row,listId) {
   const key=JSON.stringify([listId,row.keyword,row.url]);
@@ -85,6 +87,13 @@ function product(row,listId) {
     updateListingAge(time);
     source.append(' ',time);
   }
+  const auction=host==='ekizo.mandarake.co.jp';
+  if(auction) {
+    const label=document.createElement('span');
+    label.className='auction-label';
+    label.textContent='경매 상품';
+    source.prepend(label,' ');
+  }
   if(row.catalogue_available===0) source.append(' · 품절');
   if('stock_available' in row && host==='order.mandarake.co.jp') {
     source.append(' · '+(row.stock_available===0?'품절 · 재입고 알림 대기':row.stock_available===1?'마지막 확인 시 재고 있음':'재입고 확인 대기'));
@@ -109,18 +118,25 @@ function product(row,listId) {
     loading=true;
     heading.textContent='상품 설명';
     text.textContent='상품 설명 불러오는 중…';
-    listingDetails(row.url).then(detail=>{
+    function showDescription(detail) {
+      heading.textContent=detail.translated?'상품 설명':'상품 설명 (원문)';
+      text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
+    }
+    listingDetails(row.url,true).then(async detail=>{
       if(!detail.description) {
         text.textContent=detail.pending?'상품 설명을 확인하고 있어요. 잠시 후 자동으로 다시 확인해요.':'원본 페이지에서 상품 설명을 확인해 주세요.';
         if(detail.pending && card.classList.contains('expanded')) {
           detailRetry=setTimeout(()=>{
             if(card.isConnected && card.classList.contains('expanded')) showExpanded(true);
-          },30000);
+          },5000);
         }
         return;
       }
-      if(!detail.translated) heading.textContent='상품 설명 (원문)';
-      text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
+      showDescription(detail);
+      if(!detail.needsTranslation) return;
+      heading.textContent='상품 설명 (번역 중)';
+      try {showDescription(await listingDetails(row.url));}
+      catch {heading.textContent='상품 설명 (원문)';}
     }).catch(()=>{
       text.textContent='설명을 불러오지 못했어요. 카드를 접었다 다시 열면 재시도해요.';
     }).finally(()=>{loading=false;});
@@ -144,7 +160,7 @@ function product(row,listId) {
   const item=url.pathname.match(/^\/item\/(m\d+)$/);
   if (row.image && url.hostname==='order.mandarake.co.jp') photo(row.image);
   if (url.hostname==='jp.mercari.com' && item) photo('https://static.mercdn.net/item/detail/orig/photos/'+item[1]+'_1.jpg');
-  if (url.hostname==='ekizo.mandarake.co.jp') {
+  if (auction) {
     const observer=new IntersectionObserver(entries=>{
       if (!entries.some(entry=>entry.isIntersecting)) return;
       observer.disconnect();
