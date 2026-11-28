@@ -285,7 +285,11 @@ for(const row of el('shop-menu').querySelectorAll('label')) {
   copy.querySelector('input').removeAttribute('name');
   el('edit-shops').append(copy);
 }
-let editing;
+const shopBoxes=Array.from(el('edit-shops').querySelectorAll('input'));
+let editing, pendingShopSave;
+function restoreShopChoices(rows) {
+  for(const box of shopBoxes) box.checked=rows.some(row=>row.shop===box.value);
+}
 function foldEditor() {
   if(!editing) return;
   editing.button.setAttribute('aria-expanded','false');
@@ -327,25 +331,20 @@ el('range-high').oninput=event=>{
   el('max-won').value=money(Math.min(priceLimit,n));
   syncRanges();
 };
-function editKeyword(keyword,rows,mode,panel,button) {
+function editKeyword(keyword,rows,mode,panel,button,updateRows) {
+  if(pendingShopSave) return;
   const same=editing?.button===button;
   foldEditor();
   if(same) return;
-  const dialog=el('keyword-dialog');
-  if(!dialog.style.top) {
-    dialog.style.top=Math.max(8,dialog.getBoundingClientRect().top)+'px';
-    dialog.style.marginBlock='0';
-    dialog.style.bottom='auto';
-    dialog.style.maxHeight='calc(100dvh - '+dialog.style.top+' - 8px)';
-  }
   panel.firstChild.append(form);
   panel.inert=false;
-  editing={keyword,rows,mode,panel,button};
+  editing={keyword,rows,mode,panel,button,updateRows};
   button.setAttribute('aria-expanded','true');
   const price=mode==='price';
   el('edit-shops').hidden=price;
   el('edit-prices').hidden=!price;
-  for(const box of el('edit-shops').querySelectorAll('input')) box.checked=rows.some(row=>row.shop===box.value);
+  el('price-actions').hidden=!price;
+  restoreShopChoices(rows);
   el('min-won').value=money(rows[0].min_krw??0);
   el('max-won').value=money(rows[0].max_krw??priceLimit);
   const legacy=rows[0].min_yen!=null || rows[0].max_yen!=null;
@@ -358,70 +357,113 @@ el('editor-cancel').onclick=foldEditor;
 el('keyword-dialog').addEventListener('close',()=>{
   foldEditor();
   el('editor-parking').append(form);
-  for(const property of ['top','bottom','margin-block','max-height']) el('keyword-dialog').style.removeProperty(property);
 });
-el('editor-form').onsubmit=async event=>{
+el('edit-shops').onchange=async ()=>{
+  const editor=editing;
+  if(editor?.mode!=='shops' || pendingShopSave) return;
+  const status=el('editor-status');
+  const selected=shopBoxes.filter(box=>box.checked).map(box=>box.value);
+  status.textContent='';
+  if(!selected.length) {
+    restoreShopChoices(editor.rows);
+    status.textContent='상점을 하나 이상 선택해 주세요.';
+    return;
+  }
+  if(editor.rows.some(row=>!selected.includes(row.shop)) && !confirm('선택 해제한 상점의 이 키워드와 관련 알림을 삭제할까요?')) {
+    restoreShopChoices(editor.rows);
+    return;
+  }
+  pendingShopSave=editor;
+  for(const box of shopBoxes) box.disabled=true;
+  status.textContent='상점 선택 반영 중…';
+  try {
+    await api('/keyword-shops',{keyword:editor.keyword,shops:selected},AbortSignal.timeout(15000));
+  } catch {
+    pendingShopSave=null;
+    for(const box of shopBoxes) box.disabled=false;
+    if(editing===editor) {
+      restoreShopChoices(editor.rows);
+      status.textContent='상점을 변경하지 못했어요. 다시 선택해 주세요.';
+    }
+    return;
+  }
+  editor.saved=true;
+  await run();
+  if(pendingShopSave===editor && editing===editor)
+    status.textContent='상점을 변경했어요. 선택 목록을 다시 불러오는 중이에요.';
+};
+form.onsubmit=async event=>{
   event.preventDefault();
-  const {keyword,rows,mode}=editing;
-  const save=event.submitter;
+  const editor=editing;
+  if(editor?.mode!=='price') return;
+  const save=form.querySelector('button[type="submit"]');
   if(save.disabled) return;
   save.disabled=true;
   try {
-    if(mode==='price') {
-      const min=amount('min-won'), max=amount('max-won');
-      if(![min,max].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=priceLimit)) throw Error('0원부터 1,000,000원 사이의 금액을 입력해 주세요.');
-      if(min>max) throw Error('최대 가격은 최소 가격 이상이어야 해요.');
-      await api('/keyword-price',{keyword,min,max,currency:'KRW'});
-    } else {
-      const shops=Array.from(el('edit-shops').querySelectorAll(':checked'),box=>box.value);
-      if(!shops.length) throw Error('상점을 하나 이상 선택해 주세요.');
-      if(rows.some(row=>!shops.includes(row.shop)) && !confirm('선택 해제한 상점의 이 키워드와 관련 알림을 삭제할까요?')) return;
-      await api('/keyword-shops',{keyword,shops});
-    }
-    foldEditor();
+    const min=amount('min-won'), max=amount('max-won');
+    if(![min,max].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=priceLimit)) throw Error('0원부터 1,000,000원 사이의 금액을 입력해 주세요.');
+    if(min>max) throw Error('최대 가격은 최소 가격 이상이어야 해요.');
+    await api('/keyword-price',{keyword:editor.keyword,min,max,currency:'KRW'});
+    if(editing===editor) foldEditor();
     await run();
-  } catch(e){el('editor-status').textContent=e.message;}
+  } catch(e){if(editing===editor) el('editor-status').textContent=e.message;}
   finally {save.disabled=false;}
 };
 function watchCard([keyword, rows]) {
   const logos=document.createElement('span');
   logos.className='watch-logos';
-  for(const shop of new Set(rows.map(row=>row.shop))) {
-    const logo=new Image();
-    logo.alt=shops[shop] || shop;
-    logo.src=shopLogos.get(shop);
-    logos.append(logo);
+  function renderLogos() {
+    logos.replaceChildren(...Array.from(new Set(rows.map(row=>row.shop)),shop=>{
+      const logo=new Image();
+      logo.alt=shops[shop] || shop;
+      logo.src=shopLogos.get(shop);
+      return logo;
+    }));
   }
+  renderLogos();
   const name=document.createElement('span');
   name.className='watch-keyword';
   name.textContent=keyword;
-  let pause=rows.some(row=>row.active);
+  const togglePath=pause=>pause?'M9 5v14m6-14v14':'M8 5l11 7-11 7Z';
+  const toggleLabel=pause=>keyword+(pause?' 일시정지':' 재개');
+  const isActive=()=>rows.some(row=>row.active);
+  function updateToggle() {
+    const active=isActive();
+    toggle.title=toggleLabel(active);
+    toggle.setAttribute('aria-label',toggle.title);
+    toggle.querySelector('path').setAttribute('d',togglePath(active));
+  }
+  function updateRows(nextRows) {
+    rows.splice(0,rows.length,...nextRows);
+    renderLogos();
+    updateToggle();
+  }
   async function apply(targets, path, body) {
     const results=await Promise.allSettled(targets.map(row=>api(path,body(row))));
     const failed=results.some(result=>result.status==='rejected');
     el('watch-feedback').textContent=failed?'일부 상점에 반영하지 못했어요. 목록을 확인해 주세요.':'';
     return !failed;
   }
-  const toggle=iconButton(keyword+(pause?' 일시정지':' 재개'),pause?'M9 5v14m6-14v14':'M8 5l11 7-11 7Z',
-    async ()=>{
+  const toggle=iconButton(toggleLabel(isActive()),togglePath(isActive()),async ()=>{
+      if(pendingShopSave) return;
+      const pause=isActive();
       toggle.disabled=true;
       try {
         const ok=await apply(rows.filter(row=>Boolean(row.active)===pause),'/toggle',row=>({id:row.id,active:!pause}));
         if(ok) {
           for(const row of rows) row.active=!pause;
-          pause=!pause;
-          const label=keyword+(pause?' 일시정지':' 재개');
-          toggle.title=label;
-          toggle.setAttribute('aria-label',label);
-          toggle.querySelector('path').setAttribute('d',pause?'M9 5v14m6-14v14':'M8 5l11 7-11 7Z');
+          updateToggle();
         }
       } finally {toggle.disabled=false;}
     });
   const remove=iconButton(keyword+' 삭제','M7 7l10 10M17 7 7 17',()=>{
-    if(confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
+    if(!pendingShopSave && confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
       return apply(rows,'/delete',row=>({id:row.id}));
   });
   remove.classList.add('ios-button--destructive');
+  const actions=document.createElement('div');
+  actions.className='watch-actions';
+  actions.append(toggle,remove);
   const options=document.createElement('div');
   options.className='watch-options';
   const panel=document.createElement('div');
@@ -431,13 +473,13 @@ function watchCard([keyword, rows]) {
   for(const [label,mode] of [['상점 선택','shops'],['가격','price']]) {
     const control=document.createElement('button');
     control.type='button';
-    control.className='ios-button ios-button--compact';
+    control.className='ios-button ios-button--compact ios-button--option';
     control.textContent=label;
     control.setAttribute('aria-expanded','false');
-    control.onclick=()=>editKeyword(keyword,rows,mode,panel,control);
+    control.onclick=()=>editKeyword(keyword,rows,mode,panel,control,updateRows);
     options.append(control);
   }
-  return [logos,name,toggle,remove,options,panel];
+  return [logos,name,actions,options,panel];
 }
 const productSnapshots=new Map();
 const pendingProductRenders=new Map();
@@ -575,6 +617,19 @@ async function refresh() {
   for(const watch of watches) {
     if(!groups.has(watch.keyword)) groups.set(watch.keyword,[]);
     groups.get(watch.keyword).push(watch);
+  }
+  if(pendingShopSave?.saved) {
+    const editor=pendingShopSave;
+    pendingShopSave=null;
+    for(const box of shopBoxes) box.disabled=false;
+    if(editing===editor) {
+      const rows=groups.get(editor.keyword);
+      if(rows?.length) {
+        editor.updateRows(rows);
+        restoreShopChoices(editor.rows);
+        el('editor-status').textContent='';
+      } else foldEditor();
+    }
   }
   const nextWatchSnapshot=JSON.stringify(watches);
   if(!editing && watchSnapshot!==nextWatchSnapshot) {
