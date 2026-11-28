@@ -34,6 +34,8 @@ function updateListingAge(time) {
   time.textContent=age+' '+time.dataset.kind;
 }
 const expandedProducts=new Set();
+const reduceListingMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const listingTransition={duration:320,easing:'cubic-bezier(.2,.72,.3,1)'};
 const productDetails=new Map();
 function listingDetails(url,original=false) {
   const key=url+(original?' original':' translation');
@@ -53,6 +55,8 @@ function product(row,listId) {
   const key=JSON.stringify([listId,row.keyword,row.url]);
   const card=document.createElement('div');
   card.className='listing-card';
+  const layout=document.createElement('div');
+  layout.className='listing-layout';
   const toggle=document.createElement('button');
   toggle.type='button';
   toggle.className='listing-toggle';
@@ -104,7 +108,50 @@ function product(row,listId) {
   heading.textContent='상품 설명';
   const text=document.createElement('p');
   description.append(heading,text);
-  card.append(toggle,thumb,title,a,price,source,description);
+  layout.append(toggle,thumb,title,a,price,source,description);
+  card.append(layout);
+
+  let heightAnimation, movements=[];
+  function animateLayout(update,moveContents=false) {
+    if(reduceListingMotion.matches || !card.getClientRects().length) {
+      heightAnimation?.cancel();
+      movements.forEach(animation=>animation.cancel());
+      card.classList.remove('animating');
+      update();
+      return;
+    }
+    const image=thumb.querySelector('img');
+    const targets=moveContents ? [image?.naturalWidth ? image : null,title,price,source].filter(Boolean) : [];
+    const positions=targets.map(element=>element.getBoundingClientRect());
+    const fromHeight=card.getBoundingClientRect().height;
+    heightAnimation?.cancel();
+    if(moveContents) {
+      movements.forEach(animation=>animation.cancel());
+      movements=[];
+    }
+    update();
+    const toHeight=layout.getBoundingClientRect().height;
+    if(Math.abs(fromHeight-toHeight)>1) {
+      card.classList.add('animating');
+      const animation=card.animate([{height:fromHeight+'px'},{height:toHeight+'px'}],listingTransition);
+      heightAnimation=animation;
+      animation.onfinish=()=>{
+        if(heightAnimation===animation) card.classList.remove('animating');
+      };
+    } else {
+      card.classList.remove('animating');
+    }
+    for(const [index,element] of targets.entries()) {
+      const before=positions[index],after=element.getBoundingClientRect();
+      if(!after.width || !after.height) continue;
+      const dx=before.left-after.left,dy=before.top-after.top;
+      const scale=element===image ? ` scale(${before.width/after.width},${before.height/after.height})` : '';
+      movements.push(element.animate([
+        {transformOrigin:'top left',transform:`translate(${dx}px,${dy}px)${scale}`},
+        {transformOrigin:'top left',transform:'none'}
+      ],listingTransition));
+    }
+  }
 
   let loading=false, detailRetry;
   function showExpanded(open) {
@@ -119,12 +166,16 @@ function product(row,listId) {
     heading.textContent='상품 설명';
     text.textContent='상품 설명 불러오는 중…';
     function showDescription(detail) {
-      heading.textContent=detail.translated?'상품 설명':'상품 설명 (원문)';
-      text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
+      animateLayout(()=>{
+        heading.textContent=detail.translated?'상품 설명':'상품 설명 (원문)';
+        text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
+      });
     }
     listingDetails(row.url,true).then(async detail=>{
       if(!detail.description) {
-        text.textContent=detail.pending?'상품 설명을 확인하고 있어요. 잠시 후 자동으로 다시 확인해요.':'원본 페이지에서 상품 설명을 확인해 주세요.';
+        animateLayout(()=>{
+          text.textContent=detail.pending?'상품 설명을 확인하고 있어요. 잠시 후 자동으로 다시 확인해요.':'원본 페이지에서 상품 설명을 확인해 주세요.';
+        });
         if(detail.pending && card.classList.contains('expanded')) {
           detailRetry=setTimeout(()=>{
             if(card.isConnected && card.classList.contains('expanded')) showExpanded(true);
@@ -138,14 +189,16 @@ function product(row,listId) {
       try {showDescription(await listingDetails(row.url));}
       catch {heading.textContent='상품 설명 (원문)';}
     }).catch(()=>{
-      text.textContent='설명을 불러오지 못했어요. 카드를 접었다 다시 열면 재시도해요.';
+      animateLayout(()=>{
+        text.textContent='설명을 불러오지 못했어요. 카드를 접었다 다시 열면 재시도해요.';
+      });
     }).finally(()=>{loading=false;});
   }
   toggle.onclick=()=>{
     const open=toggle.getAttribute('aria-expanded')==='false';
     if(open) expandedProducts.add(key);
     else expandedProducts.delete(key);
-    showExpanded(open);
+    animateLayout(()=>showExpanded(open),true);
   };
   showExpanded(expandedProducts.has(key));
   function photo(url) {
