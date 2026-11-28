@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: write
 concurrency:
   group: market-watch
   cancel-in-progress: false
@@ -35,6 +36,7 @@ jobs:
               print("MARKET_API="+url,"COLLECTOR_TOKEN="+key,sep="\n",file=out)
           CODE
       - name: Collect active watches every minute
+        id: poll
         run: |
           python - <<'PY'
           import subprocess
@@ -53,6 +55,16 @@ jobs:
               failed |= result.returncode != 0
           sys.exit(int(failed))
           PY
+      - name: Queue next collection while watches are active
+        if: ${{ !cancelled() && (steps.poll.outcome == 'success' || steps.poll.outcome == 'failure') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --max-time 25 --retry 2 \
+            -H "Authorization: Bearer $COLLECTOR_TOKEN" "$MARKET_API/collector/watches" > "$RUNNER_TEMP/active-watches.json"
+          if jq -e 'length > 0' "$RUNNER_TEMP/active-watches.json" > /dev/null; then
+            gh workflow run watch.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
       - name: Check live collection and web app results
         if: github.event_name == 'push'
         run: |
