@@ -121,3 +121,25 @@ CREATE TABLE IF NOT EXISTS mercari_descriptions (
 CREATE TABLE IF NOT EXISTS mercari_description_jobs (
   url TEXT PRIMARY KEY, retry_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- Start a ten-minute window when the first notification enters an empty queue.
+CREATE TABLE IF NOT EXISTS push_digest_schedule (
+  endpoint TEXT PRIMARY KEY REFERENCES push_devices(endpoint) ON DELETE CASCADE,
+  due_at INTEGER NOT NULL,
+  lease_until INTEGER NOT NULL DEFAULT 0,
+  claim_id TEXT
+);
+CREATE INDEX IF NOT EXISTS digest_due ON push_digest_schedule(due_at,lease_until);
+CREATE INDEX IF NOT EXISTS restock_endpoint ON restock_push(endpoint,id);
+
+CREATE TRIGGER IF NOT EXISTS schedule_listing_digest AFTER INSERT ON listing_push BEGIN
+  INSERT OR IGNORE INTO push_digest_schedule(endpoint,due_at) VALUES(NEW.endpoint,unixepoch()+600);
+END;
+CREATE TRIGGER IF NOT EXISTS schedule_restock_digest AFTER INSERT ON restock_push BEGIN
+  INSERT OR IGNORE INTO push_digest_schedule(endpoint,due_at) VALUES(NEW.endpoint,unixepoch()+600);
+END;
+
+INSERT OR IGNORE INTO push_digest_schedule(endpoint,due_at)
+SELECT endpoint,unixepoch()+600 FROM (
+  SELECT endpoint FROM listing_push UNION SELECT endpoint FROM restock_push
+);

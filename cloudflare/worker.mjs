@@ -225,7 +225,7 @@ async function deliver(db, device, payload, checkKeys=null) {
   const body=await encryptPush(keys,payload);
   if(checkKeys) return {bytes:body.byteLength,signature:sig.byteLength};
   let response;
-  try {response = await fetch(device.endpoint,{method:'POST',redirect:'manual',headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
+  try {response = await fetch(device.endpoint,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(10000),headers:{...(body ? {'Content-Encoding':'aes128gcm','Content-Type':'application/octet-stream'} : {}),TTL:'1800',Urgency:'high',Authorization:'vapid t='+message+'.'+b64(sig)+', k='+id.public_key},body});} catch {return {accepted:false,stage:'network'};}
   if([404,410].includes(response.status)) await db.prepare('DELETE FROM push_devices WHERE owner=? AND endpoint=?').bind(device.owner,device.endpoint).run();
   const detail=response.ok ? {} : await response.json().catch(()=>({}));
   const reason=typeof detail?.reason==='string' && /^[A-Za-z]{1,60}$/.test(detail.reason) ? detail.reason : '';
@@ -233,29 +233,64 @@ async function deliver(db, device, payload, checkKeys=null) {
 }
 // Compare marketplace posting time with the current watch session, including on push retries.
 const freshMercari = stamp => `${stamp} BETWEEN MAX(unixepoch()-86400,(SELECT started_at FROM mercari_sessions WHERE watch_id=w.id)) AND unixepoch()`;
-async function drain(db) {
-  const claimed=await db.prepare('UPDATE listing_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM listing_push WHERE retry_after<=unixepoch() ORDER BY retry_after,id LIMIT 8) RETURNING id,endpoint,watch_id,url').all();
+const hasQueuedPush=`(
+  EXISTS(SELECT 1 FROM listing_push WHERE endpoint=push_digest_schedule.endpoint)
+  OR EXISTS(SELECT 1 FROM restock_push WHERE endpoint=push_digest_schedule.endpoint)
+)`;
+
+async function drainDigests(db) {
+  const claim=crypto.randomUUID();
+  const claimed=await db.prepare(`
+    UPDATE push_digest_schedule SET lease_until=unixepoch()+120,claim_id=?
+    WHERE endpoint IN (
+      SELECT endpoint FROM push_digest_schedule
+      WHERE due_at<=unixepoch() AND lease_until<=unixepoch() AND ${hasQueuedPush}
+        AND EXISTS(SELECT 1 FROM push_keys WHERE endpoint=push_digest_schedule.endpoint)
+      ORDER BY due_at,endpoint LIMIT 4
+    )
+    RETURNING endpoint,due_at
+  `).bind(claim).all();
+
   await Promise.allSettled(claimed.results.map(async job=>{
-    const listing=await db.prepare(`SELECT d.owner,d.endpoint,w.keyword,m.title,m.url FROM push_devices d JOIN watches w ON w.owner=d.owner JOIN matches m ON m.watch_id=w.id LEFT JOIN listing_times t ON t.url=m.url WHERE d.endpoint=? AND w.id=? AND m.url=? AND (w.shop<>\'mercari\' OR (w.active=1 AND ${freshMercari('t.posted_at')}))`).bind(job.endpoint,job.watch_id,job.url).first();
-    if(listing) {
-      const result=await deliver(db,listing,await listingNotice(listing,null));
-      if(!result.accepted) return;
+    const device=await db.prepare('SELECT endpoint,owner FROM push_devices WHERE endpoint=?').bind(job.endpoint).first();
+    if(!device) return;
+    const [listing,restock]=await db.batch([
+      db.prepare(`SELECT COALESCE(MAX(p.id),0) AS cutoff,
+        COUNT(DISTINCT CASE WHEN w.owner=? AND (w.shop<>'mercari' OR
+          (w.active=1 AND ${freshMercari('t.posted_at')})) THEN p.url END) AS total
+        FROM listing_push p
+        LEFT JOIN watches w ON w.id=p.watch_id
+        LEFT JOIN listing_times t ON t.url=p.url
+        WHERE p.endpoint=?`).bind(device.owner,device.endpoint),
+      db.prepare(`SELECT COALESCE(MAX(p.id),0) AS cutoff,
+        COUNT(DISTINCT CASE WHEN p.owner=? AND s.available=1 THEN p.url END) AS total
+        FROM restock_push p
+        LEFT JOIN favorite_stock s ON s.owner=p.owner AND s.url=p.url
+        WHERE p.endpoint=?`).bind(device.owner,device.endpoint)
+    ]);
+
+    const listings=listing.results[0],restocks=restock.results[0];
+    if(listings.total || restocks.total) {
+      const title=listings.total ? `새 상품 ${listings.total}개` : `재입고 상품 ${restocks.total}개`;
+      const body=listings.total && restocks.total
+        ? `찜한 상품 ${restocks.total}개도 재입고됐어요.`
+        : '눌러서 매물 알림 앱에서 확인하세요.';
+      const sent=await deliver(db,device,{title,body,tag:'market-summary-'+job.due_at});
+      if(!sent.accepted) return;
     }
-    await db.prepare('DELETE FROM listing_push WHERE id=?').bind(job.id).run();
-  }));
-}
-async function drainRestocks(db) {
-  const jobs=await db.prepare('UPDATE restock_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM restock_push WHERE retry_after<=unixepoch() ORDER BY id LIMIT 6) RETURNING id,owner,endpoint,url').all();
-  await Promise.allSettled(jobs.results.map(async job=>{
-    const row=await db.prepare('SELECT f.title,f.url,c.image FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url JOIN push_devices d ON d.owner=f.owner WHERE f.owner=? AND f.url=? AND d.endpoint=? AND s.available=1').bind(job.owner,job.url,job.endpoint).first();
-    if(row) {
-      const notice=await listingNotice({...row,keyword:'만다라케 나카노점'},null);
-      notice.title='찜한 상품 재입고 · 만다라케 나카노점';
-      notice.tag='restock|'+job.id;
-      const result=await deliver(db,job,notice);
-      if(!result.accepted) return;
-    }
-    await db.prepare('DELETE FROM restock_push WHERE id=?').bind(job.id).run();
+
+    // Discard only the counted snapshot; arrivals while the push was in flight stay queued.
+    const stillClaimed='EXISTS(SELECT 1 FROM push_digest_schedule WHERE endpoint=? AND claim_id=?)';
+    await db.batch([
+      db.prepare(`DELETE FROM listing_push WHERE endpoint=? AND id<=? AND ${stillClaimed}`)
+        .bind(device.endpoint,listings.cutoff,device.endpoint,claim),
+      db.prepare(`DELETE FROM restock_push WHERE endpoint=? AND id<=? AND ${stillClaimed}`)
+        .bind(device.endpoint,restocks.cutoff,device.endpoint,claim),
+      db.prepare(`DELETE FROM push_digest_schedule WHERE endpoint=? AND claim_id=? AND NOT ${hasQueuedPush}`)
+        .bind(device.endpoint,claim),
+      db.prepare(`UPDATE push_digest_schedule SET due_at=unixepoch()+600,lease_until=0,claim_id=NULL
+        WHERE endpoint=? AND claim_id=?`).bind(device.endpoint,claim)
+    ]);
   }));
 }
 const origin = 'https://lggommm.github.io';
@@ -287,7 +322,6 @@ export default {async fetch(req, env, ctx) {
       } catch(e) {return reply({error:e.name,description:String(e.message).slice(0,180)});}
     }
     if(path==='/collector/restocks' && req.method==='GET') {
-      await drainRestocks(env.DB);
       return reply((await sql('SELECT s.url,MIN(f.title) AS title FROM favorite_stock s JOIN favorites f USING(owner,url) GROUP BY s.url ORDER BY MIN(s.checked_at),s.url LIMIT 12').all()).results);
     }
     if(path==='/collector/restocks' && req.method==='POST') {
@@ -300,12 +334,12 @@ export default {async fetch(req, env, ctx) {
         updates.push(sql('UPDATE favorite_stock SET available=COALESCE(?,available),checked_at=? WHERE url=? AND checked_at<?',available===null?null:Number(available),at,url,at));
       }
       if(updates.length) await env.DB.batch(updates);
-      await drainRestocks(env.DB);
       return reply({});
     }
-    if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
-    if (path === '/collector/watches' && req.method === 'GET')
+    if (path === '/collector/watches' && req.method === 'GET') {
+      await drainDigests(env.DB);
       return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
+    }
     if (path === '/collector/mercari-descriptions' && req.method==='GET') {
       const result=await sql(`SELECT url FROM (
         SELECT j.url,0 AS priority,j.retry_at AS weight FROM mercari_description_jobs j
@@ -357,7 +391,6 @@ export default {async fetch(req, env, ctx) {
       const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
         .map(([url])=>sql('INSERT OR IGNORE INTO listing_times(url,posted_at) VALUES(?,?)',url,posted[url]));
       await env.DB.batch([...cards,...insert,...times,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
-      await drain(env.DB);
       return reply({});
     }
     return reply({},404);
