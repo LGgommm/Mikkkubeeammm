@@ -97,10 +97,7 @@ CREATE TABLE IF NOT EXISTS restock_push (
   owner TEXT NOT NULL,url TEXT NOT NULL,retry_after INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(owner,url) REFERENCES favorite_stock(owner,url) ON DELETE CASCADE
 );
-CREATE TRIGGER IF NOT EXISTS track_catalogue_favorite AFTER INSERT ON favorites
-WHEN NEW.url LIKE 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=%' BEGIN
-  INSERT OR IGNORE INTO favorite_stock(owner,url) VALUES(NEW.owner,NEW.url);
-END;
+DROP TRIGGER IF EXISTS track_catalogue_favorite;
 INSERT OR IGNORE INTO favorite_stock(owner,url) SELECT owner,url FROM favorites
 WHERE url LIKE 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=%';
 CREATE TRIGGER IF NOT EXISTS notify_restock AFTER UPDATE OF available ON favorite_stock
@@ -112,8 +109,4 @@ UPDATE matches SET visible=2 WHERE visible=0 AND watch_id IN (SELECT id FROM wat
 CREATE TABLE IF NOT EXISTS nakano_catalogue (
   url TEXT PRIMARY KEY, available INTEGER NOT NULL, image TEXT NOT NULL
 );
-CREATE TRIGGER IF NOT EXISTS seed_favorite_stock AFTER INSERT ON favorite_stock
-WHEN EXISTS(SELECT 1 FROM nakano_catalogue WHERE url=NEW.url) BEGIN
-  UPDATE favorite_stock SET available=(SELECT available FROM nakano_catalogue WHERE url=NEW.url)
-    WHERE owner=NEW.owner AND url=NEW.url;
-END;
+DROP TRIGGER IF EXISTS seed_favorite_stock;
