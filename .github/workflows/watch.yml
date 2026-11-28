@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install mercapi==0.5.0 requests
+      - run: pip install mercapi==0.5.0 requests beautifulsoup4
       - name: Prepare collector credentials
         env:
           DEPLOY_KEY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,7 +62,11 @@ jobs:
         run: |
           curl --fail --silent --show-error --max-time 25 --retry 2 \
             -H "Authorization: Bearer $COLLECTOR_TOKEN" "$MARKET_API/collector/watches" > "$RUNNER_TEMP/active-watches.json"
-          if jq -e 'length > 0' "$RUNNER_TEMP/active-watches.json" > /dev/null; then
+          active=$(jq length "$RUNNER_TEMP/active-watches.json")
+          if [ "$active" -eq 0 ]; then
+            active=$(curl --fail --silent --show-error --max-time 25 -H "Authorization: Bearer $COLLECTOR_TOKEN" "$MARKET_API/collector/restocks" | jq length)
+          fi
+          if [ "$active" -gt 0 ]; then
             gh workflow run watch.yml --repo "$GITHUB_REPOSITORY" --ref main
           fi
       - name: Check live collection and web app results
