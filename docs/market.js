@@ -60,6 +60,9 @@ function product(row) {
     updateListingAge(time);
     source.append(' ',time);
   }
+  if('stock_available' in row && host==='order.mandarake.co.jp') {
+    source.append(' · '+(row.stock_available===0?'품절 · 재입고 알림 대기':row.stock_available===1?'마지막 확인 시 재고 있음':'재입고 확인 대기'));
+  }
   a.append(thumb,title,price,source);
   function photo(url) {
     const img=new Image();
@@ -390,7 +393,7 @@ async function refresh() {
   feedSaved=saved;
   availableWords=[...new Set([...groups.keys(),...hits.map(row=>row.keyword)].filter(Boolean))];
   renderFeed();
-  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at]));
+  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.stock_available]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }
