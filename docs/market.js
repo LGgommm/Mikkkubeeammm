@@ -76,7 +76,7 @@ function product(row) {
     const observer=new IntersectionObserver(entries=>{
       if (!entries.some(entry=>entry.isIntersecting)) return;
       observer.disconnect();
-      api('/auction-card?id='+encodeURIComponent(url.searchParams.get('index'))).then(data=>{
+      auctionCard(url).then(data=>{
         if(data.image) photo(data.image);
         if(data.price) price.textContent='경매 '+data.price;
       }).catch(()=>{});
@@ -260,6 +260,91 @@ function productList(id,rows,make,empty,signature) {
   productSnapshots.set(id,snapshot);
 }
 let watchSnapshot;
+let feedHits=[], feedSaved=new Set(), availableWords=[];
+const selectedShops=new Set(), selectedWords=new Set();
+const auctionCards=new Map();
+function auctionCard(url) {
+  const id=url.searchParams.get('index');
+  if(!auctionCards.has(id) || Date.now()-auctionCards.get(id).at>60000){
+    const entry={at:Date.now()};
+    entry.request=api('/auction-card?id='+encodeURIComponent(id)).then(card=>{
+      entry.yen=Number((card.price || '').replaceAll(',','').match(/^([0-9]+)円$/)?.[1]);
+      return card;
+    }).catch(error=>{auctionCards.delete(id);throw error;});
+    auctionCards.set(id,entry);
+  }
+  return auctionCards.get(id).request;
+}
+function choiceButtons(id,values,selected) {
+  const box=el(id);
+  box.replaceChildren();
+  for(const [value,label] of [[null,'전체'],...values]){
+    const b=document.createElement('button');
+    b.type='button'; b.textContent=label;
+    b.setAttribute('aria-pressed',String(value===null ? selected.size===0 : selected.has(value)));
+    b.onclick=()=>{
+      if(value===null) selected.clear();
+      else if(selected.has(value)) selected.delete(value);
+      else selected.add(value);
+      choiceButtons(id,values,selected);
+      renderFeed();
+    };
+    box.append(b);
+  }
+}
+function showChoices(){
+  choiceButtons('filter-shops',Object.entries(shops),selectedShops);
+  choiceButtons('filter-words',availableWords.map(word=>[word,word]),selectedWords);
+}
+if(el('feed-filter')) {
+el('feed-filter').onclick=()=>{showChoices();el('filter-dialog').showModal();};
+el('filter-close').onclick=()=>el('filter-dialog').close();
+el('filter-done').onclick=()=>{
+  if(el('filter-min').reportValidity() && el('filter-max').reportValidity()) el('filter-dialog').close();
+};
+el('filter-reset').onclick=()=>{
+  selectedShops.clear();selectedWords.clear();
+  el('filter-min').value=el('filter-max').value='';
+  showChoices();renderFeed();
+};
+el('filter-min').oninput=el('filter-max').oninput=renderFeed;
+}
+let priceLookupRunning=false;
+async function fillAuctionPrices(urls) {
+  if(priceLookupRunning || !urls.length) return;
+  priceLookupRunning=true;
+  await Promise.allSettled(urls.slice(0,4).map(url=>auctionCard(new URL(url))));
+  priceLookupRunning=false;
+  // Continue only after a successful lookup; a subsequent poll retries failures.
+  if(urls.slice(0,4).some(url=>auctionCards.has(new URL(url).searchParams.get('index')))) renderFeed();
+}
+function renderFeed(){
+  const min=el('filter-min'),max=el('filter-max');
+  const byPrice=Boolean(min && (min.value!=='' || max.value!==''));
+  const inverted=byPrice && min.value!=='' && max.value!=='' && min.valueAsNumber>max.valueAsNumber;
+  max?.setCustomValidity(inverted?'최고가는 최저가 이상으로 입력해 주세요.':'');
+  const active=Boolean(byPrice || selectedShops.size || selectedWords.size);
+  el('feed-filter')?.classList.toggle('active',active);
+  const unknown=[], hits=feedHits.filter(row=>{
+    if(selectedShops.size && !selectedShops.has(row.shop)) return false;
+    if(selectedWords.size && !selectedWords.has(row.keyword)) return false;
+    if(!byPrice) return true;
+    const amount=row.title.match(/([\d,]+)\s*円\)?$/);
+    let yen=amount ? Number(amount[1].replaceAll(',','')) : NaN;
+    if(!amount && row.url.startsWith('https://ekizo.mandarake.co.jp/')){
+      const entry=auctionCards.get(new URL(row.url).searchParams.get('index'));
+      yen=entry?.yen;
+      if(yen===undefined || Date.now()-entry.at>60000) unknown.push(row.url);
+    }
+    return Number.isFinite(yen) && (!min.value || yen>=min.valueAsNumber) && (!max.value || yen<=max.valueAsNumber);
+  });
+  const saved=feedSaved;
+  const empty=active ? (unknown.length?'가격 확인 중…':'선택한 조건에 맞는 매물이 없어요.') : '첫 수집 이후 발견한 새 매물이 여기에 표시돼요.';
+  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,saved.has(r.url)])]);
+  if(el('filter-done')) el('filter-done').textContent=hits.length+'개 보기';
+  if(!inverted) void fillAuctionPrices([...new Set(unknown)]);
+}
+
 let latestRefresh=0;
 async function refresh() {
   const request=++latestRefresh;
@@ -280,7 +365,10 @@ async function refresh() {
     list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
     watchSnapshot=nextWatchSnapshot;
   }
-  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.',hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,saved.has(r.url)]));
+  feedHits=hits;
+  feedSaved=saved;
+  availableWords=[...new Set([...groups.keys(),...hits.map(row=>row.keyword)].filter(Boolean))];
+  renderFeed();
   productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
