@@ -19,9 +19,30 @@ async function api(path, body, signal) {
 }
 function button(label, fn) {
   const btn = document.createElement('button');
+  btn.type='button';
+  btn.className='ios-button';
   btn.textContent = label;
   btn.onclick = () => run(fn);
   return btn;
+}
+function controlIcon(path) {
+  return '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="'+path+'"/></svg>';
+}
+function iconButton(label,path,action) {
+  const control=button(label,action);
+  control.classList.add('ios-button--icon');
+  control.setAttribute('aria-label',label);
+  control.title=label;
+  control.innerHTML=controlIcon(path);
+  return control;
+}
+function favoriteButton(row,saved) {
+  const control=iconButton(saved?'찜 해제':'찜',
+    'M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z',
+    ()=>api('/favorite',{url:row.url,add:!saved}));
+  control.classList.add('favorite-button');
+  control.setAttribute('aria-pressed',String(saved));
+  return control;
 }
 function list(id,rows,make,empty) {
   el(id).replaceChildren(...(rows.length?rows.map(row=>{
@@ -62,14 +83,14 @@ function product(row,listId) {
   toggle.type='button';
   toggle.className='listing-toggle';
   const toggleLabel=document.createElement('span');
-  toggleLabel.className='listing-toggle-label';
+  toggleLabel.className='listing-toggle-label ios-button ios-button--compact ios-button--neutral';
   toggle.append(toggleLabel);
   const a=document.createElement('a');
   a.href=row.url;
   a.target='_blank';
   a.rel='noopener';
-  a.className='listing-original';
-  a.textContent='원본 페이지 ↗';
+  a.className='listing-original ios-button ios-button--compact';
+  a.innerHTML='원본 페이지'+controlIcon('M13 5h6v6m0-6-8 8M10 6H5v13h13v-5');
   const thumb=document.createElement('span');
   thumb.className='thumb';
   thumb.textContent='사진 없음';
@@ -188,6 +209,7 @@ function product(row,listId) {
     card.classList.toggle('expanded',open);
     toggle.setAttribute('aria-expanded',String(open));
     toggle.setAttribute('aria-label',(open?'접기: ':'상세 보기: ')+title.textContent);
+    toggleLabel.hidden=!open;
     toggleLabel.textContent=open?'접기':'';
     a.hidden=description.hidden=!open;
     clearTimeout(detailRetry);
@@ -257,13 +279,6 @@ function product(row,listId) {
 }
 const shopLogos = new Map(Array.from(document.querySelectorAll('#shop-menu input'), box =>
   [box.value, box.closest('label').querySelector('img').src]));
-function watchControl(label, path, action) {
-  const control = button(label, action);
-  control.setAttribute('aria-label',label);
-  control.title=label;
-  control.innerHTML='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="'+path+'"/></svg>';
-  return control;
-}
 const form=el('editor-form');
 for(const row of el('shop-menu').querySelectorAll('label')) {
   const copy=row.cloneNode(true);
@@ -387,7 +402,7 @@ function watchCard([keyword, rows]) {
     el('watch-feedback').textContent=failed?'일부 상점에 반영하지 못했어요. 목록을 확인해 주세요.':'';
     return !failed;
   }
-  const toggle=watchControl(keyword+(pause?' 일시정지':' 재개'),pause?'M5 3v10M11 3v10':'M5 3l8 5-8 5z',
+  const toggle=iconButton(keyword+(pause?' 일시정지':' 재개'),pause?'M9 5v14m6-14v14':'M8 5l11 7-11 7Z',
     async ()=>{
       toggle.disabled=true;
       try {
@@ -398,14 +413,15 @@ function watchCard([keyword, rows]) {
           const label=keyword+(pause?' 일시정지':' 재개');
           toggle.title=label;
           toggle.setAttribute('aria-label',label);
-          toggle.querySelector('path').setAttribute('d',pause?'M5 3v10M11 3v10':'M5 3l8 5-8 5z');
+          toggle.querySelector('path').setAttribute('d',pause?'M9 5v14m6-14v14':'M8 5l11 7-11 7Z');
         }
       } finally {toggle.disabled=false;}
     });
-  const remove=watchControl(keyword+' 삭제','M4 4l8 8M12 4l-8 8',()=>{
+  const remove=iconButton(keyword+' 삭제','M7 7l10 10M17 7 7 17',()=>{
     if(confirm('등록한 모든 상점에서 이 키워드와 관련 알림을 삭제할까요?'))
       return apply(rows,'/delete',row=>({id:row.id}));
   });
+  remove.classList.add('ios-button--destructive');
   const options=document.createElement('div');
   options.className='watch-options';
   const panel=document.createElement('div');
@@ -415,6 +431,7 @@ function watchCard([keyword, rows]) {
   for(const [label,mode] of [['상점 선택','shops'],['가격','price']]) {
     const control=document.createElement('button');
     control.type='button';
+    control.className='ios-button ios-button--compact';
     control.textContent=label;
     control.setAttribute('aria-expanded','false');
     control.onclick=()=>editKeyword(keyword,rows,mode,panel,control);
@@ -457,7 +474,9 @@ function choiceButtons(id,values,selected) {
   box.replaceChildren();
   for(const [value,label] of [[null,'전체'],...values]){
     const b=document.createElement('button');
-    b.type='button'; b.textContent=label;
+    b.type='button';
+    b.className='ios-button ios-button--compact ios-button--option';
+    b.textContent=label;
     b.setAttribute('aria-pressed',String(value===null ? selected.size===0 : selected.has(value)));
     b.onclick=()=>{
       if(value===null) selected.clear();
@@ -516,7 +535,7 @@ function renderFeed(){
   const inverted=byPrice && min.value!=='' && max.value!=='' && min.valueAsNumber>max.valueAsNumber;
   max?.setCustomValidity(inverted?'최고가는 최저가 이상으로 입력해 주세요.':'');
   const active=Boolean(byPrice || selectedShops.size!==Object.keys(shops).length || selectedWords.size);
-  el('feed-filter')?.classList.toggle('active',active);
+  el('feed-filter')?.setAttribute('aria-pressed',String(active));
   const unknown=[], hits=feedHits.filter(row=>{
     if(!selectedShops.has(row.shop)) return false;
     if(selectedWords.size && !selectedWords.has(row.keyword)) return false;
@@ -532,7 +551,7 @@ function renderFeed(){
   });
   const saved=feedSaved;
   const empty=active ? (unknown.length?'가격 확인 중…':'선택한 조건에 맞는 매물이 없어요.') : '첫 수집 이후 발견한 새 매물이 여기에 표시돼요.';
-  productList('hits',hits,r=>[product(r,'hits'),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.catalogue_available,saved.has(r.url)])]);
+  productList('hits',hits,r=>[product(r,'hits'),favoriteButton(r,saved.has(r.url))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.catalogue_available,saved.has(r.url)])]);
   if(el('filter-done')) el('filter-done').textContent=hits.length+'개 보기';
   if(!inverted) void fillAuctionPrices([...new Set(unknown)]);
 }
@@ -567,7 +586,7 @@ async function refresh() {
   feedSaved=saved;
   availableWords=[...new Set([...groups.keys(),...hits.map(row=>row.keyword)].filter(Boolean))];
   renderFeed();
-  productList('stars',favorites,r=>[product(r,'stars'),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
+  productList('stars',favorites,r=>[product(r,'stars'),favoriteButton(r,true)],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }

@@ -23,13 +23,10 @@
   darkAppearance.addEventListener('change', updateStatusBar);
 </script>
 <link rel="manifest" href="./manifest.json">
-<link rel="stylesheet" href="./market.css?v=34">
+<link rel="stylesheet" href="./market.css?v=35">
 <style>
   .feed-tools,#filter-dialog footer,.filter-range,.filter-choices {display:flex;align-items:center;gap:8px}
   .feed-tools {margin-left:auto}
-  #feed-filter {display:grid;place-items:center;width:34px;height:34px;min-height:34px;padding:0;border-radius:50%}
-  #feed-filter svg {width:16px;height:16px}
-  #feed-filter.active,#filter-done,.filter-choices button[aria-pressed=true] {background:var(--solid-blue);color:#fff}
   .filter-section {margin-top:9px;border-radius:18px;background:var(--fill);overflow:hidden}
   .filter-section>button {display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 14px;color:var(--ink);background:transparent;font-weight:600;text-align:start}
   .filter-section>button::after {content:'';width:7px;height:7px;border:solid var(--sub);border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .18s}
@@ -38,18 +35,18 @@
   .filter-panel:not([inert]) {grid-template-rows:1fr}
   .filter-panel>div {min-height:0;overflow:hidden}
   .filter-panel .filter-range,.filter-panel .filter-choices {padding:2px 12px 12px}
-  .filter-panel input,.filter-panel .filter-choices button:not([aria-pressed=true]) {background:var(--card)}
+  .filter-panel input {background:var(--card)}
   @media(prefers-reduced-motion:reduce){.filter-panel,.filter-section>button::after {transition:none}}
   .filter-range input {min-width:0;width:40%;-webkit-tap-highlight-color:transparent}
   #filter-dialog .filter-range input:focus {outline:none;box-shadow:none;text-decoration:underline;text-underline-offset:3px}
   .filter-choices {flex-wrap:wrap}
-  .filter-choices button {min-height:34px;border-radius:999px;overflow-wrap:anywhere;max-width:100%}
+  .filter-choices button {overflow-wrap:anywhere;max-width:100%}
   #filter-dialog footer {justify-content:space-between;margin-top:18px}
   .favorite-link-card {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-bottom:20px;padding:14px;border-radius:22px;background:var(--card)}
   .favorite-link-card label {font-weight:600}
   .favorite-link-fields {display:flex;gap:8px}
   .favorite-link-fields input {flex:1;min-width:0;width:0;min-height:52px;border-radius:18px}
-  .favorite-link-fields button {flex:none;align-self:center;padding-inline:16px;border-radius:999px;background:var(--solid-blue);color:white;font-weight:600}
+  .favorite-link-fields button {flex:none;align-self:center}
   #favorite-link-status:empty {display:none}
   @media (prefers-reduced-motion: no-preference) {
     #keyword-dialog[open] { animation: keyword-enter 200ms ease-out; }
@@ -67,7 +64,6 @@
   #keyword-dialog label { display:block; font-weight:650; }
   #keyword-dialog input { flex:1; min-width:0; min-height:44px; padding:0; background:transparent; }
   #keyword-dialog form { display:flex; align-items:center; flex-wrap:nowrap; gap:3px; padding:3px 4px; margin:12px 0 6px; border-radius:999px; background:var(--fill); }
-  #keyword-dialog button[type="submit"] { flex:none; padding:0 14px; min-height:38px; font-size:15px; color:white; background:var(--solid-blue); font-weight:600; }
   #current-shop { display:block; margin:0 8px 18px; }
   #keyword-dialog select { flex:1; }
   #watches { display:grid; gap:8px; list-style:none; padding:0; margin:10px 0 16px; }
@@ -76,7 +72,6 @@
   .watch-logos img { box-sizing:border-box; display:block; width:26px; height:26px; border-radius:50%; padding:3px; border:1px solid var(--sub); background:white; object-fit:contain; }
   .watch-logos img + img { margin-left:-8px; }
   .watch-keyword { overflow-wrap:anywhere; }
-  #watches button { display:grid; place-items:center; width:36px; min-height:36px; margin:0; padding:0; border-radius:50%; background:var(--card); color:var(--ink); }
   #keyword-dialog #word:focus { outline:none; box-shadow:none; }
   #keyword-title:focus {outline:none}
   .page-track { display:flex; align-items:flex-start; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; scrollbar-width:none; min-height:32vh; }
@@ -85,14 +80,14 @@
   .page-track > section[inert] { max-height:32vh; overflow:hidden; }
 </style>
 <style>
-  button, #keyword-dialog select { border-radius:999px; }
+  #keyword-dialog select { border-radius:999px; }
   svg { stroke-linecap:round; stroke-linejoin:round; }
   summary { display:flex; align-items:center; gap:8px; list-style:none; }
   summary::-webkit-details-marker { display:none; }
   .chevron { flex:none; color:var(--sub); }
   details[open] > summary .chevron { transform:rotate(90deg); }
   #form { position:relative; }
-  .shop-picker { display:grid; place-items:center; width:36px; height:34px; min-height:0; flex:none; border:0; padding:0; color:var(--ink); background:transparent; -webkit-tap-highlight-color:transparent; }
+  #shop-trigger {flex:none;background:transparent}
   .shop-picker:focus { outline:0; box-shadow:none; }
   .shop-picker:focus-visible { color:var(--blue); }
   #shop-menu { position:absolute; top:calc(100% + 5px); left:0; z-index:2; }
@@ -108,7 +103,6 @@
 </style>
 <style>
   .watch-options { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:5px; }
-  #watches .watch-options button { width:auto; min-height:32px; padding:4px 12px; border-radius:999px; font-size:13px; }
   .watch-panel { grid-column:1/-1; display:grid; grid-template-rows:0fr; transition:grid-template-rows .2s ease; }
   .watch-panel.expanded { grid-template-rows:1fr; }
   .panel-body { overflow:hidden; min-height:0; }
@@ -120,7 +114,6 @@
   #keyword-dialog .price-values input { flex:none; min-width:2ch; max-width:11ch; min-height:32px; padding:0; font:inherit; font-variant-numeric:tabular-nums; border-radius:0; }
   #keyword-dialog .price-values input:focus { outline:none; border-bottom:1px solid var(--blue); }
   #editor-form footer { display:flex; justify-content:flex-end; gap:6px; }
-  #watches #editor-form footer button { width:auto; padding:4px 12px; border-radius:999px; }
   .price-track { position:relative; height:36px; margin:4px 8px; }
   .price-track::before { content:''; position:absolute; inset:16px 0; border-radius:8px; background:linear-gradient(to right,var(--sub) var(--lo),var(--blue) var(--lo) var(--hi),var(--sub) var(--hi)); }
   #keyword-dialog .price-track input { position:absolute; inset:0; width:100%; height:36px; appearance:none; pointer-events:none; margin:0; border:0; background:transparent; }
@@ -144,13 +137,13 @@
   <button type="button" role="tab" id="stars-tab" aria-selected="false" aria-controls="stars-panel" tabindex="-1"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z"/></svg><span>찜 목록</span></button>
 </nav>
 <div class="page-track">
-<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" type="button" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
+<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" class="ios-button ios-button--icon" type="button" aria-pressed="false" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert>
   <form id="favorite-link-form" class="favorite-link-card">
     <label for="favorite-link-url">상품 링크로 찜 추가</label>
     <div class="favorite-link-fields">
       <input id="favorite-link-url" type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="상품 링크 붙여 넣기" maxlength="2048" required>
-      <button type="submit">추가</button>
+      <button class="ios-button ios-button--prominent" type="submit">추가</button>
     </div>
     <small id="favorite-link-status" role="status"></small>
   </form>
@@ -160,23 +153,23 @@
 <dialog class="app-sheet" id="filter-dialog" aria-labelledby="filter-title">
   <button type="button" class="sheet-grabber" aria-label="시트 크게 보기" aria-expanded="false"></button>
   <header>
-    <button type="button" class="sheet-close" id="filter-close" aria-label="필터 닫기">×</button>
+    <button type="button" class="sheet-close ios-button ios-button--icon ios-button--neutral" id="filter-close" aria-label="필터 닫기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="filter-title" tabindex="-1" autofocus>매물 필터</h2>
-    <button type="button" id="filter-done">결과 보기</button>
+    <button type="button" class="ios-button ios-button--prominent" id="filter-done">결과 보기</button>
   </header>
   <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-price">가격 (엔)</button><div class="filter-panel" id="filter-panel-price" inert><div><div class="filter-range"><input id="filter-min" type="number" min="0" inputmode="numeric" aria-label="최저 가격" placeholder="최저가"><span>~</span><input id="filter-max" type="number" min="0" inputmode="numeric" aria-label="최고 가격" placeholder="최고가"></div></div></div></div>
   <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-shop">상점 선택</button><div class="filter-panel" id="filter-panel-shop" inert><div><div id="filter-shops" role="group" aria-label="표시할 상점"></div></div></div></div>
   <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-word">키워드 선택</button><div class="filter-panel" id="filter-panel-word" inert><div><div id="filter-words" class="filter-choices"></div></div></div></div>
-  <footer><button type="button" id="filter-reset">초기화</button></footer>
+  <footer><button type="button" class="ios-button" id="filter-reset">초기화</button></footer>
 </dialog>
 <dialog class="app-sheet" id="keyword-dialog" aria-labelledby="keyword-title">
   <button type="button" class="sheet-grabber" aria-label="시트 크게 보기" aria-expanded="false"></button>
   <header>
-    <button type="button" class="sheet-close" id="close-keywords" aria-label="키워드 관리 닫기">×</button>
+    <button type="button" class="sheet-close ios-button ios-button--icon ios-button--neutral" id="close-keywords" aria-label="키워드 관리 닫기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
     <h2 id="keyword-title" tabindex="-1" autofocus>키워드 관리</h2>
   </header>
   <form id="form">
-    <button class="shop-picker" id="shop-trigger" type="button" aria-label="상점 선택" aria-controls="shop-menu" aria-expanded="false">
+    <button class="shop-picker ios-button ios-button--icon ios-button--neutral" id="shop-trigger" type="button" aria-label="상점 선택" aria-controls="shop-menu" aria-expanded="false">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg>
     </button>
     <div id="shop-menu" role="group" aria-label="검색할 상점" hidden>
@@ -184,7 +177,7 @@
       <label><img class="store-icon" alt="" width="24" height="24" src="data:image/png;base64,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"><span class="store-name">만다라케 나카노점</span><input name="shops" type="checkbox" value="nakano"></label>
     </div>
     <input id="word" aria-label="키워드 입력" placeholder="키워드 입력…" required maxlength="80">
-    <button type="submit" aria-label="키워드 등록">등록</button>
+    <button class="ios-button ios-button--prominent ios-button--compact" type="submit" aria-label="키워드 등록">등록</button>
   </form>
   <small id="current-shop"></small>
   <small id="watch-feedback" role="status"></small>
@@ -193,8 +186,8 @@
 </dialog>
 <dialog class="app-sheet" id="settings-dialog" aria-labelledby="settings-title">
   <button type="button" class="sheet-grabber" aria-label="시트 크게 보기" aria-expanded="false"></button>
-  <header><button type="button" class="sheet-close" id="close-settings" aria-label="설정 닫기">×</button><h2 id="settings-title" tabindex="-1" autofocus>설정</h2></header>
-<details open><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button id="enable-push" hidden>이 기기 알림 켜기</button><button id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
+  <header><button type="button" class="sheet-close ios-button ios-button--icon ios-button--neutral" id="close-settings" aria-label="설정 닫기"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M7 7l10 10M17 7 7 17"/></svg></button><h2 id="settings-title" tabindex="-1" autofocus>설정</h2></header>
+<details open><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>알림 설정 및 키워드 백업</summary><div><button class="ios-button ios-button--prominent" id="enable-push" hidden>이 기기 알림 켜기</button><button class="ios-button" id="test-push" hidden>시험 알림 보내기</button><small id="push-status" role="status"></small></div><details><summary><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 4 3.5 3.5q.5.5 0 1L6 12"/></svg>키워드 백업 및 복구</summary><small>복구코드로 이 목록에 접근할 수 있어요. 다른 사람과 공유하지 마세요.</small><button class="ios-button" id="backup-key" type="button">현재 복구코드 복사</button><input id="restore-code" type="password" aria-label="이전 복구코드" placeholder="이전 복구코드" autocomplete="off" spellcheck="false"><button class="ios-button ios-button--prominent" id="restore-key" type="button">목록 복구</button><small role="status" id="backup-status"></small></details>
 </details>
 </dialog>
 <div id="editor-parking" hidden>
@@ -206,11 +199,11 @@
       <div class="price-track"><input type="range" min="0" max="1000000" step="5000" id="range-low" aria-label="최저가 조절"><input type="range" min="0" max="1000000" step="5000" id="range-high" aria-label="최고가 조절"></div>
     </div>
     <small id="editor-status" role="status"></small>
-    <footer><button type="button" id="editor-cancel">취소</button><button type="submit">저장</button></footer>
+    <footer><button type="button" class="ios-button" id="editor-cancel">취소</button><button class="ios-button ios-button--prominent" type="submit">저장</button></footer>
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=steady-listings"></script>
+<script src="./config.js"></script><script src="./market.js?v=ios-controls"></script>
 <script>
   for(const bar of document.querySelectorAll('.filter-section>button')) {
     const panel=document.getElementById(bar.getAttribute('aria-controls'));
