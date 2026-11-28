@@ -102,11 +102,11 @@
   .shop-picker:focus { outline:0; box-shadow:none; }
   .shop-picker:focus-visible { color:var(--blue); }
   #shop-menu { position:absolute; top:calc(100% + 5px); left:0; z-index:2; }
-  :is(#shop-menu,#edit-shops) { width:min(258px,100%); padding:6px; border-radius:20px; background:var(--card); box-shadow:0 4px 22px #0004,0 0 0 1px var(--fill); }
-  :is(#shop-menu,#edit-shops) label { cursor:pointer; min-height:44px; font-weight:500; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:6px 10px; background:transparent; color:var(--ink); }
-  :is(#shop-menu,#edit-shops) label:active { background:var(--fill); }
+  :is(#shop-menu,#edit-shops,#filter-shops) { width:min(258px,100%); padding:6px; border-radius:20px; background:var(--card); box-shadow:0 4px 22px #0004,0 0 0 1px var(--fill); }
+  :is(#shop-menu,#edit-shops,#filter-shops) label { cursor:pointer; min-height:44px; font-weight:500; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:6px 10px; background:transparent; color:var(--ink); }
+  :is(#shop-menu,#edit-shops,#filter-shops) label:active { background:var(--fill); }
   .store-icon { flex:none; width:24px; height:24px; object-fit:contain; border-radius:6px; }
-  :is(#shop-menu,#edit-shops) input[type="checkbox"] { appearance:auto; flex:none; min-height:0; width:18px; height:18px; margin:0 0 0 auto; accent-color:var(--blue); }
+  :is(#shop-menu,#edit-shops,#filter-shops) input[type="checkbox"] { appearance:auto; flex:none; min-height:0; width:18px; height:18px; margin:0 0 0 auto; accent-color:var(--blue); }
   @media (prefers-reduced-motion:no-preference) {
     #shop-menu:not([hidden]) { animation:shop-appear 150ms ease-out; transform-origin:top left; }
     @keyframes shop-appear { from { opacity:0; transform:translateY(-3px) scale(.97); } to { opacity:1; transform:none; } }
@@ -119,6 +119,8 @@
   .watch-panel.expanded { grid-template-rows:1fr; }
   .panel-body { overflow:hidden; min-height:0; }
   #keyword-dialog #editor-form { display:grid; margin:0; padding:6px 2px; gap:6px; background:transparent; border-radius:0; }
+  #filter-dialog #filter-shops {width:100%;margin:0;box-shadow:none}
+  #filter-shops input[type="checkbox"] {min-width:0;padding:0}
   #keyword-dialog #edit-shops { width:100%; min-width:0; margin:0; }
   .price-values { display:flex; align-items:baseline; justify-content:flex-start; gap:5px; font-size:15px; font-weight:600; }
   #keyword-dialog .price-values input { flex:none; min-width:2ch; max-width:11ch; min-height:32px; padding:0; font:inherit; font-variant-numeric:tabular-nums; border-radius:0; }
@@ -151,7 +153,7 @@
 <dialog id="filter-dialog" aria-labelledby="filter-title">
   <header><h2 id="filter-title">매물 필터</h2><button type="button" id="filter-close" aria-label="필터 닫기">×</button></header>
   <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-price">가격 (엔)</button><div class="filter-panel" id="filter-panel-price" inert><div><div class="filter-range"><input id="filter-min" type="number" min="0" inputmode="numeric" aria-label="최저 가격" placeholder="최저가"><span>~</span><input id="filter-max" type="number" min="0" inputmode="numeric" aria-label="최고 가격" placeholder="최고가"></div></div></div></div>
-  <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-shop">상점 선택</button><div class="filter-panel" id="filter-panel-shop" inert><div><div id="filter-shops" class="filter-choices"></div></div></div></div>
+  <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-shop">상점 선택</button><div class="filter-panel" id="filter-panel-shop" inert><div><div id="filter-shops" role="group" aria-label="표시할 상점"></div></div></div></div>
   <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-word">키워드 선택</button><div class="filter-panel" id="filter-panel-word" inert><div><div id="filter-words" class="filter-choices"></div></div></div></div>
   <footer><button type="button" id="filter-reset">초기화</button><button type="button" id="filter-done">결과 보기</button></footer>
 </dialog>
@@ -189,7 +191,7 @@
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=feed-filters"></script>
+<script src="./config.js"></script><script src="./market.js?v=shop-checks"></script>
 <script>
   for(const bar of document.querySelectorAll('.filter-section>button')) {
     const panel=document.getElementById(bar.getAttribute('aria-controls'));
