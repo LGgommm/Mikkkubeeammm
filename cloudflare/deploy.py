@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import subprocess
 import time
 import urllib.request
@@ -44,11 +45,21 @@ wrangler("deploy")
 key = hmac.new(token.encode(),b"market-alert-collector-v1",hashlib.sha256).hexdigest()
 wrangler("secret","put","COLLECTOR_TOKEN",data=key)
 url = f"https://{name}.{subdomain}.workers.dev"
+state_probe_key = secrets.token_hex(32)
+pages_origin = "https://lggommm.github.io"
 for attempt in range(15):
     try:
         req = urllib.request.Request(url+"/collector/watches",headers={"Authorization": "Bearer " + key, "User-Agent": "MarketAlerts/1.0 (deployment verification)", "Accept": "application/json"})
         with urllib.request.urlopen(req,timeout=15) as response:
             assert isinstance(json.load(response),list)
+        state_req = urllib.request.Request(url+"/state", headers={
+            "Authorization": "Bearer " + state_probe_key, "Origin": pages_origin,
+            "User-Agent": "MarketAlerts/1.0 (deployment verification)", "Accept": "application/json",
+        })
+        with urllib.request.urlopen(state_req,timeout=15) as response:
+            assert response.headers.get("Access-Control-Allow-Origin") == pages_origin
+            state = json.load(response)
+            assert all(isinstance(state.get(field),list) for field in ("watches","hits","favorites"))
         break
     except urllib.error.HTTPError as error:
         body = error.read(8192)

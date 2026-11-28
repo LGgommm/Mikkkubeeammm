@@ -443,11 +443,16 @@ export default {async fetch(req, env, ctx) {
     return reply({image:photo ? new URL(photo[1],source.url).href : null,price:price ? price[1]+'円' : null});
   }
   if (path === '/state' && req.method === 'GET') {
-    const [w,h,f] = await env.DB.batch([
-      sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
-      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at,c.image,c.available AS catalogue_available FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url LEFT JOIN nakano_catalogue c ON c.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
-      sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,c.image,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
-    return reply({watches:w.results,hits:h.results,favorites:f.results});
+    try {
+      const [w,h,f] = await env.DB.batch([
+        sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
+        sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at,c.image,c.available AS catalogue_available FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url LEFT JOIN nakano_catalogue c ON c.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
+        sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,c.image,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
+      return reply({watches:w.results,hits:h.results,favorites:f.results});
+    } catch(error) {
+      console.error('Failed to read market lists',error);
+      return reply({error:'lists_unavailable'},503);
+    }
   }
   if (req.method !== 'POST') return reply({},405);
   const b = await req.json();
