@@ -93,10 +93,12 @@ async function deliver(db, device, payload, checkKeys=null) {
   const reason=typeof detail?.reason==='string' && /^[A-Za-z]{1,60}$/.test(detail.reason) ? detail.reason : '';
   return {accepted:response.ok,providerStatus:response.status,reason};
 }
+// Compare marketplace posting time with the current watch session, including on push retries.
+const freshMercari = stamp => `${stamp} BETWEEN MAX(unixepoch()-86400,(SELECT started_at FROM mercari_sessions WHERE watch_id=w.id)) AND unixepoch()`;
 async function drain(db) {
   const claimed=await db.prepare('UPDATE listing_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM listing_push WHERE retry_after<=unixepoch() ORDER BY retry_after,id LIMIT 8) RETURNING id,endpoint,watch_id,url').all();
   await Promise.allSettled(claimed.results.map(async job=>{
-    const listing=await db.prepare('SELECT d.owner,d.endpoint,w.keyword,m.title,m.url FROM push_devices d JOIN watches w ON w.owner=d.owner JOIN matches m ON m.watch_id=w.id WHERE d.endpoint=? AND w.id=? AND m.url=?').bind(job.endpoint,job.watch_id,job.url).first();
+    const listing=await db.prepare(`SELECT d.owner,d.endpoint,w.keyword,m.title,m.url FROM push_devices d JOIN watches w ON w.owner=d.owner JOIN matches m ON m.watch_id=w.id LEFT JOIN listing_times t ON t.url=m.url WHERE d.endpoint=? AND w.id=? AND m.url=? AND (w.shop<>\'mercari\' OR (w.active=1 AND ${freshMercari('t.posted_at')}))`).bind(job.endpoint,job.watch_id,job.url).first();
     if(listing) {
       const result=await deliver(db,listing,await listingNotice(listing,null));
       if(!result.accepted) return;
@@ -138,7 +140,10 @@ export default {async fetch(req, env) {
     if (path === '/collector/results' && req.method === 'POST') {
       const {id,rows,posted={}} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
-      const insert = rows.map(([url,title]) => sql('INSERT OR IGNORE INTO matches(watch_id,url,title,visible) SELECT id,?,?,initialized FROM watches WHERE id=? AND active=1',url,title,id));
+      const insert = rows.map(([url,title]) => sql(`INSERT OR IGNORE INTO matches(watch_id,url,title,visible)
+        SELECT w.id,?,?,CASE WHEN w.shop='mercari' THEN 1 ELSE w.initialized END FROM watches w
+        WHERE w.id=? AND w.active=1 AND (w.shop<>'mercari' OR ${freshMercari('?')})`,
+        url,title,id,Number.isSafeInteger(posted[url]) ? posted[url] : null));
       const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
         .map(([url])=>sql('INSERT OR IGNORE INTO listing_times(url,posted_at) VALUES(?,?)',url,posted[url]));
       await env.DB.batch([...insert,...times,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
@@ -167,7 +172,7 @@ export default {async fetch(req, env) {
       const device=await sql('SELECT * FROM push_devices WHERE endpoint=? AND owner=?',endpoint,owner).first();
       if(!device) return reply({accepted:false,providerStatus:410});
       try {
-        const row=await sql('SELECT w.keyword,m.title,m.url FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? ORDER BY RANDOM() LIMIT 1',owner).first();
+        const row=await sql(`SELECT w.keyword,m.title,m.url FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url WHERE w.owner=? AND (w.shop<>'mercari' OR (w.active=1 AND m.visible=1 AND ${freshMercari('t.posted_at')})) ORDER BY RANDOM() LIMIT 1`,owner).first();
         if(!row) return reply({accepted:false,stage:'empty'});
         const notice=await listingNotice(row,typeof testId==='string'?testId.slice(0,64):'test');
         return reply(await deliver(env.DB,device,notice));
