@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS restock_push (
 );
 DROP TRIGGER IF EXISTS track_catalogue_favorite;
 INSERT OR IGNORE INTO favorite_stock(owner,url) SELECT owner,url FROM favorites
-WHERE url LIKE 'https://order.mandarake.co.jp/order/detailPage/item?itemCode=%';
+WHERE instr(url,'https://order.mandarake.co.jp/order/detailPage/item?itemCode=')=1;
 CREATE TRIGGER IF NOT EXISTS notify_restock AFTER UPDATE OF available ON favorite_stock
 WHEN OLD.available=0 AND NEW.available=1 BEGIN
   INSERT INTO restock_push(endpoint,owner,url) SELECT endpoint,NEW.owner,NEW.url FROM push_devices WHERE owner=NEW.owner;
