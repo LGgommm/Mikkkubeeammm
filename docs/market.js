@@ -33,11 +33,36 @@ function updateListingAge(time) {
   const age=minutes<1?'방금':minutes<60?minutes+'분 전':minutes<1440?Math.floor(minutes/60)+'시간 전':Math.floor(minutes/1440)+'일 전';
   time.textContent=age+' '+time.dataset.kind;
 }
-function product(row) {
+const expandedProducts=new Set();
+const productDetails=new Map();
+function listingDetails(url) {
+  if(!productDetails.has(url)) {
+    const request=api('/listing-details?url='+encodeURIComponent(url),undefined,AbortSignal.timeout(20000))
+      .then(detail=>{
+        if(!detail.description || !detail.translated) productDetails.delete(url);
+        return detail;
+      })
+      .catch(error=>{productDetails.delete(url);throw error;});
+    productDetails.set(url,request);
+  }
+  return productDetails.get(url);
+}
+function product(row,listId) {
+  const key=JSON.stringify([listId,row.keyword,row.url]);
+  const card=document.createElement('div');
+  card.className='listing-card';
+  const toggle=document.createElement('button');
+  toggle.type='button';
+  toggle.className='listing-toggle';
+  const toggleLabel=document.createElement('span');
+  toggleLabel.className='listing-toggle-label';
+  toggle.append(toggleLabel);
   const a=document.createElement('a');
   a.href=row.url;
   a.target='_blank';
   a.rel='noopener';
+  a.className='listing-original';
+  a.textContent='원본 페이지 ↗';
   const thumb=document.createElement('span');
   thumb.className='thumb';
   thumb.textContent='사진 없음';
@@ -64,7 +89,43 @@ function product(row) {
   if('stock_available' in row && host==='order.mandarake.co.jp') {
     source.append(' · '+(row.stock_available===0?'품절 · 재입고 알림 대기':row.stock_available===1?'마지막 확인 시 재고 있음':'재입고 확인 대기'));
   }
-  a.append(thumb,title,price,source);
+  const description=document.createElement('section');
+  description.className='listing-description';
+  const heading=document.createElement('h3');
+  heading.textContent='상품 설명';
+  const text=document.createElement('p');
+  description.append(heading,text);
+  card.append(toggle,thumb,title,a,price,source,description);
+
+  let loading=false;
+  function showExpanded(open) {
+    card.classList.toggle('expanded',open);
+    toggle.setAttribute('aria-expanded',String(open));
+    toggle.setAttribute('aria-label',(open?'접기: ':'상세 보기: ')+title.textContent);
+    toggleLabel.textContent=open?'접기':'';
+    a.hidden=description.hidden=!open;
+    if(!open || loading) return;
+    loading=true;
+    heading.textContent='상품 설명';
+    text.textContent='상품 설명 불러오는 중…';
+    listingDetails(row.url).then(detail=>{
+      if(!detail.description) {
+        text.textContent='원본 페이지에서 상품 설명을 확인해 주세요.';
+        return;
+      }
+      if(!detail.translated) heading.textContent='상품 설명 (원문)';
+      text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
+    }).catch(()=>{
+      text.textContent='설명을 불러오지 못했어요. 카드를 접었다 다시 열면 재시도해요.';
+    }).finally(()=>{loading=false;});
+  }
+  toggle.onclick=()=>{
+    const open=toggle.getAttribute('aria-expanded')==='false';
+    if(open) expandedProducts.add(key);
+    else expandedProducts.delete(key);
+    showExpanded(open);
+  };
+  showExpanded(expandedProducts.has(key));
   function photo(url) {
     const img=new Image();
     img.alt='';
@@ -86,9 +147,9 @@ function product(row) {
         if(data.price) price.textContent='경매 '+data.price;
       }).catch(()=>{});
     });
-    observer.observe(a);
+    observer.observe(thumb);
   }
-  return a;
+  return card;
 }
 const shopLogos = new Map(Array.from(document.querySelectorAll('#shop-menu input'), box =>
   [box.value, box.closest('label').querySelector('img').src]));
@@ -360,7 +421,7 @@ function renderFeed(){
   });
   const saved=feedSaved;
   const empty=active ? (unknown.length?'가격 확인 중…':'선택한 조건에 맞는 매물이 없어요.') : '첫 수집 이후 발견한 새 매물이 여기에 표시돼요.';
-  productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.catalogue_available,saved.has(r.url)])]);
+  productList('hits',hits,r=>[product(r,'hits'),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],empty,[empty,...hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.catalogue_available,saved.has(r.url)])]);
   if(el('filter-done')) el('filter-done').textContent=hits.length+'개 보기';
   if(!inverted) void fillAuctionPrices([...new Set(unknown)]);
 }
@@ -395,7 +456,7 @@ async function refresh() {
   feedSaved=saved;
   availableWords=[...new Set([...groups.keys(),...hits.map(row=>row.keyword)].filter(Boolean))];
   renderFeed();
-  productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
+  productList('stars',favorites,r=>[product(r,'stars'),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
   el('status').textContent='확인 '+new Date().toLocaleTimeString();
 }

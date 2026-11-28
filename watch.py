@@ -95,7 +95,7 @@ def arrivals(stock,terms=()):
                         continue
                     items.append({'shop':1,'item_code':item.get('idx'),'title':item.get('title'),'price':item.get('price'),
                                   'thumbnail':urljoin('https://img.mandarake.co.jp/',item.get('thumnail') or ''),
-                                  'zaiko':item.get('zaiko')})
+                                  'zaiko':item.get('zaiko'),'detail':item.get('detail')})
     except BrowserError as error:
         raise ValueError('Nakano widget unavailable') from error
     rows = {}
@@ -107,6 +107,9 @@ def arrivals(stock,terms=()):
             continue
         url = DETAIL+code
         stock[url] = {'available':int(quantity)>0,'image':item.get('thumbnail') or ''}
+        description = item.get('detail') or item.get('condition')
+        if isinstance(description,str) and description:
+            stock[url]['description'] = BeautifulSoup(description,'html.parser').get_text('\n',strip=True)[:6000]
         if item.get('title'):
             price = str(item.get('price','')).replace(',','')
             rows[url] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
