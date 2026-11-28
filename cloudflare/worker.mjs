@@ -49,7 +49,7 @@ async function listingNotice(row,testId) {
   const match=row.title.match(/\s*\(([\d,]+)円\)$/);
   let title=match ? row.title.slice(0,match.index) : row.title;
   let price=match ? match[1]+'엔' : '';
-  let image='';
+  let image=row.image || '';
   const mercari=url.hostname==='jp.mercari.com' && url.pathname.match(/^\/item\/(m\d+)$/);
   const auction=url.hostname==='ekizo.mandarake.co.jp' && url.pathname==='/auction/item/itemInfoJa.html' && /^\d+$/.test(url.searchParams.get('index')||'');
   const catalogue=url.hostname==='order.mandarake.co.jp' && url.pathname==='/order/detailPage/item' && /^\d+$/.test(url.searchParams.get('itemCode')||'');
@@ -109,7 +109,7 @@ async function drain(db) {
 async function drainRestocks(db) {
   const jobs=await db.prepare('UPDATE restock_push SET retry_after=unixepoch()+120 WHERE id IN (SELECT id FROM restock_push WHERE retry_after<=unixepoch() ORDER BY id LIMIT 6) RETURNING id,owner,endpoint,url').all();
   await Promise.allSettled(jobs.results.map(async job=>{
-    const row=await db.prepare('SELECT f.title,f.url FROM favorites f JOIN favorite_stock s USING(owner,url) JOIN push_devices d ON d.owner=f.owner WHERE f.owner=? AND f.url=? AND d.endpoint=? AND s.available=1').bind(job.owner,job.url,job.endpoint).first();
+    const row=await db.prepare('SELECT f.title,f.url,c.image FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url JOIN push_devices d ON d.owner=f.owner WHERE f.owner=? AND f.url=? AND d.endpoint=? AND s.available=1').bind(job.owner,job.url,job.endpoint).first();
     if(row) {
       const notice=await listingNotice({...row,keyword:'만다라케 나카노점'},null);
       notice.title='찜한 상품 재입고 · 만다라케 나카노점';
@@ -169,15 +169,21 @@ export default {async fetch(req, env) {
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
     if (path === '/collector/results' && req.method === 'POST') {
-      const {id,rows,posted={}} = await req.json();
+      const {id,rows,posted={},catalogue={}} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
       const insert = rows.map(([url,title]) => sql(`INSERT OR IGNORE INTO matches(watch_id,url,title,visible)
-        SELECT w.id,?,?,CASE WHEN w.shop='mercari' THEN 1 WHEN w.initialized=0 THEN 2 ELSE 1 END FROM watches w
+        SELECT w.id,?,?,CASE WHEN w.shop='mercari' THEN 1 WHEN w.initialized=0 OR ?=1 THEN 2 ELSE 1 END FROM watches w
         WHERE w.id=? AND w.active=1 AND (w.shop<>'mercari' OR ${freshMercari('?')})`,
-        url,title,id,Number.isSafeInteger(posted[url]) ? posted[url] : null));
+        url,title,catalogue[url]?.available===false?1:0,id,Number.isSafeInteger(posted[url]) ? posted[url] : null));
+      const cards=rows.flatMap(([url])=>{
+        const card=catalogue[url];
+        if(typeof card?.available!=='boolean' || !/^https:\/\/order\.mandarake\.co\.jp\/order\/detailPage\/item\?itemCode=\d+$/.test(url)) return [];
+        const image=typeof card.image==='string' && card.image.startsWith('https://img.mandarake.co.jp/') ? card.image : '';
+        return [sql('INSERT INTO nakano_catalogue(url,available,image) VALUES(?,?,?) ON CONFLICT(url) DO UPDATE SET available=excluded.available,image=excluded.image',url,Number(card.available),image)];
+      });
       const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
         .map(([url])=>sql('INSERT OR IGNORE INTO listing_times(url,posted_at) VALUES(?,?)',url,posted[url]));
-      await env.DB.batch([...insert,...times,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
+      await env.DB.batch([...cards,...insert,...times,sql('UPDATE watches SET initialized=1 WHERE id=? AND active=1',id)]);
       await drain(env.DB);
       return reply({});
     }
@@ -225,8 +231,8 @@ export default {async fetch(req, env) {
   if (path === '/state' && req.method === 'GET') {
     const [w,h,f] = await env.DB.batch([
       sql('SELECT w.id,w.shop,w.keyword,w.active,w.initialized,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE w.owner=? ORDER BY w.id DESC',owner),
-      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
-      sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
+      sql('SELECT m.url,m.title,w.shop,w.keyword,m.found_at,t.posted_at,c.image,c.available AS catalogue_available FROM matches m JOIN watches w ON w.id=m.watch_id LEFT JOIN listing_times t ON t.url=m.url LEFT JOIN nakano_catalogue c ON c.url=m.url WHERE w.owner=? AND m.visible>0 ORDER BY m.found_at DESC LIMIT 300',owner),
+      sql('SELECT f.url,f.title,t.posted_at,s.available AS stock_available,c.image,(SELECT MIN(m.found_at) FROM watches w JOIN matches m ON m.watch_id=w.id WHERE w.owner=f.owner AND m.url=f.url) AS found_at FROM favorites f LEFT JOIN nakano_catalogue c ON c.url=f.url LEFT JOIN favorite_stock s ON s.owner=f.owner AND s.url=f.url LEFT JOIN listing_times t ON t.url=f.url WHERE f.owner=? ORDER BY f.saved_at DESC',owner)]);
     return reply({watches:w.results,hits:h.results,favorites:f.results});
   }
   if (req.method !== 'POST') return reply({},405);
