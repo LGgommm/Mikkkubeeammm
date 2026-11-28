@@ -1,24 +1,118 @@
-:root{color-scheme:light dark;--bg:#f5f5f7;--card:#fff;--ink:#151519;--sub:#62626a;--blue:#146bc9;--fill:#eeeef2}
-@media(prefers-color-scheme:dark){:root{--bg:#111113;--card:#202023;--ink:#f5f5f7;--sub:#b5b5bd;--blue:#77b6ff;--fill:#303035}}
+/* Layout and type sizes follow the iPhone component styles in the design kit. */
+:root {
+  color-scheme: light dark;
+  --bg: #f2f2f7;
+  --card: #fff;
+  --ink: #000;
+  --sub: #636366;
+  --blue: #0062cf;
+  --tint: #0088ff;
+  --solid-blue: #0065d5;
+  --fill: #eeeef3;
+  --separator: rgb(60 60 67 / 16%);
+  --glass: rgb(255 255 255 / 82%);
+  --glass-edge: rgb(255 255 255 / 88%);
+  --glass-shadow: rgb(28 39 63 / 15%);
+  --selection: rgb(118 118 128 / 12%);
+  --gutter: 16px;
+  --system-font: -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000;
+    --card: #1c1c1e;
+    --ink: #fff;
+    --sub: #aeaeb2;
+    --blue: #58aaff;
+    --tint: #0091ff;
+    --solid-blue: #0065d5;
+    --fill: #2c2c2e;
+    --separator: rgb(255 255 255 / 14%);
+    --glass: rgb(43 43 46 / 84%);
+    --glass-edge: rgb(255 255 255 / 16%);
+    --glass-shadow: rgb(0 0 0 / 36%);
+    --selection: rgb(255 255 255 / 12%);
+  }
+}
 *{box-sizing:border-box}
-body{max-width:650px;margin:0 auto;padding:max(12px,env(safe-area-inset-top)) 16px max(30px,env(safe-area-inset-bottom));background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
-header{display:flex;flex-direction:column;align-items:flex-start}
-h1{font-size:34px;line-height:1.2;letter-spacing:-1.2px;margin:8px 0 22px}
+body {
+  max-width: 650px;
+  margin: 0 auto;
+  padding: max(10px, env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px / 1.35 var(--system-font);
+}
+.app-toolbar {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 14px}
+.app-actions {display:flex;gap:8px}
+h1 {font-size:34px;line-height:1.2;letter-spacing:-.75px;margin:0 0 20px;font-weight:700}
+.glass-control {
+  -webkit-tap-highlight-color:transparent;
+  background:var(--glass);
+  border:1px solid var(--glass-edge);
+  box-shadow:inset 0 1px 0 var(--glass-edge),0 5px 18px var(--glass-shadow);
+  -webkit-backdrop-filter:blur(18px) saturate(170%);
+  backdrop-filter:blur(18px) saturate(170%);
+}
+.app-toolbar button {
+  display:grid;
+  place-items:center;
+  width:50px;
+  height:50px;
+  border-radius:50%;
+  padding:0;
+  color:var(--ink);
+}
+.app-toolbar button:active {background:var(--fill)}
+.app-toolbar #reload {color:var(--tint)}
+.page-tabs {
+  position:fixed;
+  z-index:5;
+  inset-inline:0;
+  bottom:calc(env(safe-area-inset-bottom) + 10px);
+  width:min(370px, calc(100% - 32px));
+  margin-inline:auto;
+  padding:4px;
+  border-radius:999px;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.page-tabs button {
+  min-height:54px;
+  padding:3px 9px;
+  border-radius:999px;
+  background:transparent;
+  color:var(--ink);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:1px;
+  font-size:11px;
+  font-weight:600;
+}
+.page-tabs button[aria-selected=true] {background:var(--selection);color:var(--blue)}
+.page-tabs button svg {fill:currentColor}
+.page-tabs button[aria-selected=true] svg {color:var(--tint)}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-control {background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none}
+}
 button,select,input{font:inherit;color:var(--ink);background:var(--fill);border:0;border-radius:10px;padding:8px 12px;min-height:44px}
 button,summary{cursor:pointer}button{color:var(--blue)}[hidden]{display:none!important}
-#reload{align-self:flex-end;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;padding:0;background:var(--card);color:var(--blue)}
-#reload:active,#reload:disabled{background:var(--fill)}
 @media(prefers-reduced-motion:no-preference){#reload:disabled svg{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}}
-.heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 4px 10px}
-h2{font-size:15px;margin:0;color:var(--sub)}
+.heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 4px 10px}
+h2{font-size:17px;margin:0;color:var(--sub)}
 small,.source{color:var(--sub);font-size:12px}
-.products{list-style:none;display:grid;gap:10px;margin:0 0 20px;padding:0;color:var(--sub)}
-.products li{position:relative;border-radius:18px;background:var(--card)}
-.listing-card{display:grid;grid-template-columns:clamp(85px,27vw,100px) minmax(0,1fr);grid-template-rows:1fr auto auto;gap:3px 14px;align-items:center;padding:12px;border-radius:18px;color:var(--ink);min-height:140px}
+section:focus-visible {outline-offset:-2px}
+.products {list-style:none;display:grid;margin:0 0 20px;padding:0;color:var(--sub)}
+.products:has(>li) {background:var(--card);border-radius:26px;overflow:clip}
+.products li {position:relative}
+.products li + li::before {content:"";position:absolute;inset:0 16px auto;height:1px;background:var(--separator)}
+.listing-card{display:grid;grid-template-columns:clamp(85px,27vw,100px) minmax(0,1fr);grid-template-rows:1fr auto auto;gap:3px 14px;align-items:center;padding:12px 16px;border-radius:20px;color:var(--ink);min-height:140px}
 .thumb{position:relative;grid-area:1/1/4/2;display:grid;place-items:center;width:100%;height:116px;border-radius:14px;overflow:hidden;color:var(--sub);font-size:12px}
 .thumb img{position:absolute;max-width:100%;max-height:100%;border-radius:inherit}
-.item-title{grid-area:1/2;align-self:center;font-size:15px;font-weight:550;line-height:1.4;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
-.listing-card strong{grid-area:2/2;color:var(--blue);font-size:21px;line-height:1.25}.source{grid-area:3/2;padding-bottom:6px}
+.item-title{grid-area:1/2;align-self:center;font-size:17px;font-weight:600;line-height:1.4;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.listing-card strong{grid-area:2/2;color:var(--blue);font-size:22px;line-height:1.25}.source{grid-area:3/2;padding-bottom:6px}
 .products li>button{position:absolute;right:8px;bottom:6px;font-size:12px;background:transparent;min-width:44px;min-height:32px}
 .source{padding-right:50px}
 .auction-label{display:inline-block;padding:1px 6px;margin-inline-end:3px;border-radius:999px;background:var(--fill);color:var(--blue);font-weight:650;white-space:nowrap}
@@ -33,10 +127,82 @@ small,.source{color:var(--sub);font-size:12px}
 .listing-toggle-label:not(:empty){background:var(--fill);padding:4px 8px;border-radius:999px;font-size:12px}
 .listing-description{grid-area:5/1/6/3;min-width:0;margin:4px 0 25px;padding-top:10px;border-top:1px solid var(--fill)}
 .listing-description h3{margin:0 0 5px;font-size:13px;color:var(--sub)}
-.listing-description p{margin:0;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.listing-description p{margin:0;font-size:15px;white-space:pre-wrap;overflow-wrap:anywhere}
 .products li>button{z-index:2}
 details{margin-top:10px;background:var(--card);border-radius:16px;padding:12px 16px}
 summary{font-weight:600;line-height:32px}details[open]>summary{margin-bottom:10px}
-details .products li{background:var(--bg)}form{display:flex;flex-wrap:wrap;gap:6px}input{min-width:100px;max-width:100%;flex:1}
+form{display:flex;flex-wrap:wrap;gap:6px}input{min-width:100px;max-width:100%;flex:1}
 form+small,#push-status,#backup-status{display:block;margin:8px 0}#watches{padding-left:16px}#watches button{margin:4px}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+.app-sheet {
+  position:fixed;
+  inset:auto 0 max(8px, env(safe-area-inset-bottom));
+  bottom:max(8px, calc(var(--keyboard-inset, 0px) + 8px), env(safe-area-inset-bottom));
+  margin:0 auto;
+  width:min(520px,calc(100% - 16px));
+  max-width:none;
+  max-height:min(78dvh, calc(100dvh - var(--keyboard-inset, 0px) - 16px));
+  padding:24px 18px 18px;
+  overflow:auto;
+  overscroll-behavior:contain;
+  color:var(--ink);
+  background:var(--card);
+  border:1px solid var(--separator);
+  border-radius:32px;
+  box-shadow:0 12px 36px var(--glass-shadow);
+}
+.app-sheet.sheet-expanded {
+  height:min(88dvh,calc(100dvh - var(--keyboard-inset, 0px) - 16px));
+  max-height:none;
+}
+.app-sheet .sheet-grabber {
+  position:absolute;
+  top:0;
+  left:calc(50% - 28px);
+  width:56px;
+  height:42px;
+  min-height:42px;
+  border-radius:12px;
+  padding:0;
+  background:transparent;
+  touch-action:none;
+}
+.sheet-grabber::before {
+  content:"";
+  position:absolute;
+  top:7px;
+  width:36px;
+  left:10px;
+  height:5px;
+  border-radius:999px;
+  background:var(--separator);
+}
+.app-sheet::backdrop {background:rgb(0 0 0 / 42%)}
+.app-sheet > header {display:grid;grid-template-columns:minmax(44px,1fr) auto minmax(44px,1fr);align-items:center;gap:4px;margin-bottom:12px}
+.app-sheet > header h2 {grid-column:2;font-size:22px;line-height:1.2;color:var(--ink);font-weight:700;text-align:center}
+  .app-sheet > header h2:focus {outline:none}
+.app-sheet .sheet-close {
+  display:grid;
+  place-items:center;
+  flex:none;
+  width:44px;
+  min-height:44px;
+  padding:0;
+  border-radius:50%;
+  font-size:24px;
+  line-height:1;
+  color:var(--sub);
+}
+#filter-done {justify-self:end;padding-inline:10px;font-size:13px;white-space:nowrap}
+#settings-dialog details {padding:10px 12px;background:var(--fill);border-radius:18px}
+#settings-dialog details details {background:var(--card)}
+#settings-dialog button:not(.sheet-close) {margin:3px 0}
+@media (prefers-reduced-motion:no-preference) {
+  .app-sheet[open] {animation:sheet-enter .23s ease-out}
+  @keyframes sheet-enter {from {opacity:0;transform:translateY(32px)} to {opacity:1;transform:translateY(0)}}
+}
+
+@media (min-width:768px) and (min-height:600px) {
+  .app-sheet {inset:0;margin:auto}
+}
