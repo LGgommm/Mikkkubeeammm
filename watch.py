@@ -77,16 +77,16 @@ def arrivals(stock,terms=()):
             }""",endpoint)
             for term in dict.fromkeys(terms):
                 found=tab.evaluate("""term=>new Promise(resolve=>{
-                  const callback='nakanoItems'+Math.random().toString(36).slice(2);
+                  const callback='json_callback';
                   const script=document.createElement('script');
                   function finish(items) {
                     clearTimeout(timer);script.remove();delete window[callback];resolve(items);
                   }
-                  const timer=setTimeout(()=>finish([]),9000);
+                  const timer=setTimeout(()=>finish([]),15000);
                   window[callback]=r=>finish(Array.isArray(r.items)?r.items:[]);
                   script.onerror=()=>finish([]);
                   script.src='https://order.mandarake.co.jp/order/json/itemlist?'+new URLSearchParams({
-                    callback,limit:50,offset:0,lang:'ja',keyword:term,category:'00',shop_code:1,urikire_ari:1,adult_condition:0
+                    callback,limit:20,offset:0,lang:'ja',keyword:term,category:'00',shop_code:1,urikire_ari:1,adult_condition:0
                   });
                   document.head.append(script);
                 })""",term)
