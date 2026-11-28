@@ -17,8 +17,8 @@ self.addEventListener('push',event=>{
       body:data.body || '눌러서 새 매물을 확인하세요.',tag:data.tag || data.testId || 'market-alerts',
       ...(data.image ? {image:data.image,icon:data.image} : {}),data:{url:data.url}
     });
-    if(data.testId) for(const client of await clients.matchAll({type:'window',includeUncontrolled:true}))
-      client.postMessage({displayed:data.testId});
+    for(const client of await clients.matchAll({type:'window',includeUncontrolled:true}))
+      client.postMessage(data.testId ? {displayed:data.testId} : {type:'listing-added'});
   })());
 });
 self.addEventListener('notificationclick',event=>{
