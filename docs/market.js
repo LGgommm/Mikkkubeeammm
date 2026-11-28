@@ -14,7 +14,7 @@ saveDeviceKey(key);
 async function api(path, body, signal) {
   if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
   const response = await fetch(window.MARKET_API + path,{signal,cache:'no-store',method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
-  if (!response.ok) throw Error('요청을 처리하지 못했어요 ('+response.status+').');
+  if (!response.ok) throw Object.assign(Error('요청을 처리하지 못했어요 ('+response.status+').'),{status:response.status});
   return response.json();
 }
 function button(label, fn) {
@@ -50,7 +50,7 @@ function product(row) {
   const source=document.createElement('small');
   source.className='source';
   const host=new URL(row.url).hostname;
-  source.textContent=host==='jp.mercari.com' ? shops.mercari : ['ekizo.mandarake.co.jp','order.mandarake.co.jp'].includes(host) ? shops.nakano : host;
+  source.textContent=host==='jp.mercari.com' ? shops.mercari : ['ekizo.mandarake.co.jp','order.mandarake.co.jp'].includes(host) ? (row.shop==='nakano' ? shops.nakano : '만다라케') : host;
   const seconds=row.posted_at || row.found_at;
   if(seconds>0) {
     const time=document.createElement('time');
@@ -402,6 +402,25 @@ async function refresh() {
 async function run(fn) {
   try {if(fn) await fn(); await refresh();} catch(e){el('status').textContent=e.message;}
 }
+const favoriteLinkForm=el('favorite-link-form');
+if(favoriteLinkForm) favoriteLinkForm.onsubmit=async event=>{
+  event.preventDefault();
+  const input=el('favorite-link-url'), feedback=el('favorite-link-status');
+  const submit=favoriteLinkForm.querySelector('button[type="submit"]');
+  if(submit.disabled) return;
+  const url=input.value.trim();
+  if(!url) return;
+  submit.disabled=true;
+  feedback.textContent='추가 중…';
+  try {
+    const result=await api('/favorite-link',{url},AbortSignal.timeout(15000));
+    if(input.value.trim()===url) input.value='';
+    feedback.textContent=result.added ? '찜 목록에 추가했어요.' : '이미 찜한 상품이에요.';
+    await run();
+  } catch(error) {
+    feedback.textContent=error.status===400 ? '메루카리 또는 만다라케 상품 상세 링크를 입력해 주세요.' : '상품을 추가하지 못했어요. 다시 시도해 주세요.';
+  } finally {submit.disabled=false;}
+};
 el('form').onsubmit=async event=>{
   event.preventDefault();
   const form=event.currentTarget;
