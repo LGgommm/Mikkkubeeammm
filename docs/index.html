@@ -48,6 +48,7 @@
   .favorite-link-fields input {flex:1;min-width:0;width:0;min-height:52px;border-radius:18px}
   .favorite-link-fields button {flex:none;align-self:center}
   #favorite-link-status:empty {display:none}
+  .list-load-status {display:block;margin:8px 4px;color:var(--sub)}
   @media (prefers-reduced-motion: no-preference) {
     #keyword-dialog[open] { animation: keyword-enter 200ms ease-out; }
     #keyword-dialog[open]::backdrop { animation: keyword-dim 200ms ease-out; }
@@ -143,7 +144,7 @@
   <button type="button" role="tab" id="stars-tab" aria-selected="false" aria-controls="stars-panel" tabindex="-1"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z"/></svg><span>찜 목록</span></button>
 </nav>
 <div class="page-track">
-<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status"></small><button id="feed-filter" class="ios-button ios-button--icon" type="button" aria-pressed="false" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
+<section id="alerts-panel" role="tabpanel" aria-labelledby="alerts-tab"><div class="heading"><h2 id="recent">최근 매물</h2><span class="feed-tools"><small id="status" role="status">목록 확인 중…</small><button id="feed-filter" class="ios-button ios-button--icon" type="button" aria-pressed="false" aria-haspopup="dialog" aria-controls="filter-dialog" aria-label="매물 필터" title="매물 필터"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 7h9m7 0h4M2 17h4m7 0h9"/><circle cx="14.5" cy="7" r="3.5"/><circle cx="9.5" cy="17" r="3.5"/></svg></button></span></div><ul class="products" id="hits"></ul></section>
 <section id="stars-panel" role="tabpanel" aria-labelledby="stars-tab" inert>
   <form id="favorite-link-form" class="favorite-link-card">
     <label for="favorite-link-url">상품 링크로 찜 추가</label>
@@ -153,7 +154,9 @@
     </div>
     <small id="favorite-link-status" role="status"></small>
   </form>
-  <div class="heading"><h2>찜한 매물</h2></div><ul class="products" id="stars"></ul>
+  <div class="heading"><h2>찜한 매물</h2></div>
+  <small id="stars-load-status" class="list-load-status" role="status" hidden></small>
+  <ul class="products" id="stars"></ul>
 </section>
 </div>
 <dialog class="app-sheet" id="filter-dialog" aria-labelledby="filter-title">
@@ -188,6 +191,7 @@
   <small id="current-shop"></small>
   <small id="watch-feedback" role="status"></small>
   <h2>등록한 키워드</h2>
+  <small id="keyword-load-status" class="list-load-status" role="status" hidden></small>
   <ul id="watches"></ul>
 </dialog>
 <dialog class="app-sheet" id="settings-dialog" aria-labelledby="settings-title">
@@ -209,7 +213,7 @@
   </form>
 </div>
 </main>
-<script src="./config.js"></script><script src="./market.js?v=keyword-controls"></script>
+<script src="./config.js"></script><script src="./market.js?v=list-recovery"></script>
 <script>
   for(const bar of document.querySelectorAll('.filter-section>button')) {
     const panel=document.getElementById(bar.getAttribute('aria-controls'));

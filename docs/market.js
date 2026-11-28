@@ -13,7 +13,9 @@ if(!validDeviceKey(key)) key=Array.from(crypto.getRandomValues(new Uint8Array(32
 saveDeviceKey(key);
 async function api(path, body, signal) {
   if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
-  const response = await fetch(window.MARKET_API + path,{signal,cache:'no-store',method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
+  const headers={Authorization:'Bearer '+key};
+  if(body) headers['Content-Type']='application/json';
+  const response = await fetch(window.MARKET_API + path,{signal,cache:'no-store',method:body?'POST':'GET',headers,body:body && JSON.stringify(body)});
   if (!response.ok) throw Object.assign(Error('요청을 처리하지 못했어요 ('+response.status+').'),{status:response.status});
   return response.json();
 }
@@ -598,19 +600,63 @@ function renderFeed(){
   if(!inverted) void fillAuctionPrices([...new Set(unknown)]);
 }
 
-let latestRefresh=0;
+let latestRefresh=0, failedRefreshes=0;
+let hasList=false, lastCachedState, listCacheOwner;
+const listCacheName='market-list-cache-v1';
+function validListState(state) {
+  return [state?.watches,state?.hits,state?.favorites].every(Array.isArray);
+}
+function showListStatus(message, secondary=message) {
+  el('status').textContent=message;
+  for(const id of ['stars-load-status','keyword-load-status']) {
+    const status=el(id);
+    if(status.textContent!==secondary) status.textContent=secondary;
+    status.hidden=!secondary;
+  }
+}
+function restoreListCache() {
+  try {
+    const raw=localStorage.getItem(listCacheName);
+    const entry=JSON.parse(raw);
+    if(entry?.owner===listCacheOwner && validListState(entry.state)) {
+      renderListState(entry.state);
+      lastCachedState=raw;
+    }
+  } catch {
+    // Browser storage is optional for loading the live list.
+  }
+}
+function cacheListState(state) {
+  if(!listCacheOwner) return;
+  try {
+    const raw=JSON.stringify({owner:listCacheOwner,state});
+    if(raw!==lastCachedState) localStorage.setItem(listCacheName,raw);
+    lastCachedState=raw;
+  } catch {
+    // Storage restrictions or quota do not prevent live updates.
+  }
+}
 async function refresh() {
   const request=++latestRefresh;
-  let state;
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),15000);
-  try {state=await api('/state',undefined,controller.signal);}
-  catch(error) {
-    if(request!==latestRefresh) return;
-    if(controller.signal.aborted) throw Error('목록 응답이 늦어 다시 확인할게요.');
-    throw error;
-  } finally {clearTimeout(timeout);}
-  if(request!==latestRefresh) return;
+  try {
+    if(!navigator.onLine) throw Error('offline');
+    const state=await api('/state',undefined,AbortSignal.timeout(12000));
+    if(request!==latestRefresh) return false;
+    if(!validListState(state)) throw Error('invalid list response');
+    renderListState(state);
+    cacheListState(state);
+    failedRefreshes=0;
+    showListStatus('확인 '+new Date().toLocaleTimeString(),'');
+    return true;
+  } catch {
+    if(request!==latestRefresh) return false;
+    failedRefreshes++;
+    const reason=navigator.onLine?'연결 실패':'오프라인';
+    showListStatus(reason+' · 다시 확인 중',hasList?'마지막으로 불러온 목록을 표시 중이에요.':'목록에 연결하지 못했어요. 다시 확인 중이에요.');
+    return false;
+  }
+}
+function renderListState(state) {
   const {watches,hits,favorites}=state;
   const saved=new Set(favorites.map(row=>row.url));
   const groups=new Map();
@@ -643,10 +689,11 @@ async function refresh() {
   renderFeed();
   productList('stars',favorites,r=>[product(r,'stars'),favoriteButton(r,true)],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at,r.image,r.stock_available]));
   document.querySelectorAll('.source time').forEach(updateListingAge);
-  el('status').textContent='확인 '+new Date().toLocaleTimeString();
+  hasList=true;
 }
 async function run(fn) {
-  try {if(fn) await fn(); await refresh();} catch(e){el('status').textContent=e.message;}
+  try {if(fn) await fn(); return await refresh();}
+  catch(e){el('status').textContent=e.message;return false;}
 }
 const favoriteLinkForm=el('favorite-link-form');
 if(favoriteLinkForm) favoriteLinkForm.onsubmit=async event=>{
@@ -703,7 +750,8 @@ function scheduleRefresh() {
   if(document.hidden) return;
   async function poll() {
     await run();
-    if(generation===pollGeneration && !document.hidden) pollTimer=setTimeout(poll,10000);
+    const delay=failedRefreshes ? Math.min(30000,2000 * 2 ** (Math.min(failedRefreshes,5)-1)) : 10000;
+    if(generation===pollGeneration && !document.hidden) pollTimer=setTimeout(poll,delay);
   }
   pollTimer=setTimeout(poll,0);
 }
@@ -713,7 +761,19 @@ navigator.serviceWorker?.addEventListener('message',event=>{
 document.addEventListener('visibilitychange',scheduleRefresh);
 window.addEventListener('pageshow',event=>{if(event.persisted) scheduleRefresh();});
 window.addEventListener('online',scheduleRefresh);
-scheduleRefresh();
+window.addEventListener('offline',scheduleRefresh);
+async function startListUpdates() {
+  try {
+    const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key));
+    listCacheOwner=Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+    if(!hasList) restoreListCache();
+  } catch {
+    // Older or restricted browser contexts can still fetch live.
+  }
+  if(hasList) showListStatus('목록 확인 중…','마지막으로 불러온 목록을 표시 중이에요.');
+  scheduleRefresh();
+}
+void startListUpdates();
 
 async function setupPush() {
   const enable=el('enable-push'), test=el('test-push'), status=el('push-status');
