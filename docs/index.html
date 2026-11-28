@@ -35,8 +35,16 @@
   #filter-dialog header {flex-direction:row;justify-content:space-between}
   #filter-title {font-size:18px;color:var(--ink)}
   #filter-close {min-height:34px;width:34px;padding:0;border-radius:50%;font-size:22px}
-  #filter-dialog fieldset {margin:14px 0;border:0;padding:0;min-width:0}
-  #filter-dialog legend {font-weight:600;margin-bottom:5px}
+  .filter-section {margin-top:9px;border-radius:18px;background:var(--fill);overflow:hidden}
+  .filter-section>button {display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 14px;color:var(--ink);background:transparent;font-weight:600;text-align:start}
+  .filter-section>button::after {content:'';width:7px;height:7px;border:solid var(--sub);border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .18s}
+  .filter-section>button[aria-expanded=true]::after {transform:rotate(225deg)}
+  .filter-panel {display:grid;grid-template-rows:0fr;transition:grid-template-rows .2s ease}
+  .filter-panel:not([inert]) {grid-template-rows:1fr}
+  .filter-panel>div {min-height:0;overflow:hidden}
+  .filter-panel .filter-range,.filter-panel .filter-choices {padding:2px 12px 12px}
+  .filter-panel input,.filter-panel .filter-choices button:not([aria-pressed=true]) {background:var(--card)}
+  @media(prefers-reduced-motion:reduce){.filter-panel,.filter-section>button::after {transition:none}}
   .filter-range input {min-width:0;width:40%}
   .filter-choices {flex-wrap:wrap}
   .filter-choices button {min-height:34px;border-radius:999px;overflow-wrap:anywhere;max-width:100%}
@@ -142,9 +150,9 @@
 </div>
 <dialog id="filter-dialog" aria-labelledby="filter-title">
   <header><h2 id="filter-title">매물 필터</h2><button type="button" id="filter-close" aria-label="필터 닫기">×</button></header>
-  <fieldset><legend>가격 (엔)</legend><div class="filter-range"><input id="filter-min" type="number" min="0" inputmode="numeric" aria-label="최저 가격" placeholder="최저가"><span>~</span><input id="filter-max" type="number" min="0" inputmode="numeric" aria-label="최고 가격" placeholder="최고가"></div></fieldset>
-  <fieldset><legend>상점 선택</legend><div id="filter-shops" class="filter-choices"></div></fieldset>
-  <fieldset><legend>키워드 선택</legend><div id="filter-words" class="filter-choices"></div></fieldset>
+  <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-price">가격 (엔)</button><div class="filter-panel" id="filter-panel-price" inert><div><div class="filter-range"><input id="filter-min" type="number" min="0" inputmode="numeric" aria-label="최저 가격" placeholder="최저가"><span>~</span><input id="filter-max" type="number" min="0" inputmode="numeric" aria-label="최고 가격" placeholder="최고가"></div></div></div></div>
+  <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-shop">상점 선택</button><div class="filter-panel" id="filter-panel-shop" inert><div><div id="filter-shops" class="filter-choices"></div></div></div></div>
+  <div class="filter-section"><button type="button" aria-expanded="false" aria-controls="filter-panel-word">키워드 선택</button><div class="filter-panel" id="filter-panel-word" inert><div><div id="filter-words" class="filter-choices"></div></div></div></div>
   <footer><button type="button" id="filter-reset">초기화</button><button type="button" id="filter-done">결과 보기</button></footer>
 </dialog>
 <dialog id="keyword-dialog" aria-label="키워드 관리">
@@ -183,6 +191,16 @@
 </main>
 <script src="./config.js"></script><script src="./market.js?v=feed-filters"></script>
 <script>
+  for(const bar of document.querySelectorAll('.filter-section>button')) {
+    const panel=document.getElementById(bar.getAttribute('aria-controls'));
+    function expand(open) {
+      bar.setAttribute('aria-expanded',String(open));
+      panel.inert=!open;
+    }
+    bar.addEventListener('click',()=>expand(panel.inert));
+    panel.addEventListener('invalid',()=>expand(true),true);
+    document.getElementById('filter-dialog').addEventListener('close',()=>expand(false));
+  }
   const shopMenu = document.getElementById('shop-menu');
   const trigger = document.getElementById('shop-trigger');
   const submitKeyword = document.querySelector('#form button[type="submit"]');
