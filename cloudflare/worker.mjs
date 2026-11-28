@@ -150,7 +150,7 @@ export default {async fetch(req, env) {
     }
     if(path==='/collector/restocks' && req.method==='GET') {
       await drainRestocks(env.DB);
-      return reply((await sql('SELECT url FROM favorite_stock GROUP BY url ORDER BY MIN(checked_at),url LIMIT 12').all()).results);
+      return reply((await sql('SELECT s.url,MIN(f.title) AS title FROM favorite_stock s JOIN favorites f USING(owner,url) GROUP BY s.url ORDER BY MIN(s.checked_at),s.url LIMIT 12').all()).results);
     }
     if(path==='/collector/restocks' && req.method==='POST') {
       const {observations}=await req.json();
@@ -261,7 +261,20 @@ export default {async fetch(req, env) {
     await sql('INSERT INTO watches(owner,shop,keyword) VALUES(?,?,?) ON CONFLICT(owner,shop,keyword) DO UPDATE SET active=1',owner,b.shop,b.keyword.trim()).run();
   else if (path === '/toggle') await sql('UPDATE watches SET active=? WHERE id=? AND owner=?',b.active ? 1:0,b.id,owner).run();
   else if (path === '/delete') await sql('DELETE FROM watches WHERE owner=? AND id=?',owner,b.id).run();
-  else if (path === '/favorite' && b.add) await sql('INSERT OR IGNORE INTO favorites(owner,url,title) SELECT ?,m.url,m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,owner,b.url).run();
+  else if (path === '/favorite' && b.add) {
+    const listing=await sql('SELECT m.title FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,b.url).first();
+    if(!listing) return reply({},404);
+    const writes=[sql('INSERT OR IGNORE INTO favorites(owner,url,title,saved_at) VALUES(?,?,?,unixepoch())',owner,b.url,listing.title)];
+    if(/^https:\/\/order\.mandarake\.co\.jp\/order\/detailPage\/item\?itemCode=\d+$/.test(b.url)) {
+      writes.push(sql('INSERT OR IGNORE INTO favorite_stock(owner,url,available,checked_at) VALUES(?,?,(SELECT available FROM nakano_catalogue WHERE url=?),0)',owner,b.url,b.url));
+    }
+    try {await env.DB.batch(writes);}
+    catch(error) {
+      const diagnostic=String(error.message).match(/(?:NOT NULL constraint failed: [a-z_.]+|foreign key mismatch|FOREIGN KEY constraint failed|no such (?:table|column): [a-z_.]+|SQLITE_[A-Z_]+)/i);
+      console.error('Favorite write failed:',error.message);
+      return reply({error:diagnostic?.[0] || 'favorite_write_failed'},500);
+    }
+  }
   else if (path === '/favorite') await sql('DELETE FROM favorites WHERE owner=? AND url=?',owner,b.url).run();
   else return reply({},400);
   return reply({});
