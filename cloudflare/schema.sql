@@ -70,3 +70,5 @@ WHEN NOT EXISTS(SELECT 1 FROM watches WHERE owner=OLD.owner AND keyword=OLD.keyw
 BEGIN
   DELETE FROM keyword_prices_krw WHERE owner=OLD.owner AND keyword=OLD.keyword;
 END;
+
+CREATE TABLE IF NOT EXISTS listing_times (url TEXT PRIMARY KEY, posted_at INTEGER NOT NULL);
