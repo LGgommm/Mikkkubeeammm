@@ -13,7 +13,7 @@ if(!validDeviceKey(key)) key=Array.from(crypto.getRandomValues(new Uint8Array(32
 saveDeviceKey(key);
 async function api(path, body) {
   if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
-  const response = await fetch(window.MARKET_API + path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
+  const response = await fetch(window.MARKET_API + path,{cache:'no-store',method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
   if (!response.ok) throw Error('요청을 처리하지 못했어요 ('+response.status+').');
   return response.json();
 }
@@ -238,8 +238,14 @@ function productList(id,rows,make,empty,signature) {
   list(id,rows,make,empty);
   productSnapshots.set(id,snapshot);
 }
+let latestRefresh=0;
 async function refresh() {
-  const {watches,hits,favorites}=await api('/state');
+  const request=++latestRefresh;
+  let state;
+  try {state=await api('/state');}
+  catch(error) {if(request===latestRefresh) throw error; return;}
+  if(request!==latestRefresh) return;
+  const {watches,hits,favorites}=state;
   const saved=new Set(favorites.map(row=>row.url));
   const groups=new Map();
   for(const watch of watches) {
@@ -285,8 +291,19 @@ el('reload').onclick=async event=>{
   try { await run(); }
   finally { control.disabled=false; control.removeAttribute('aria-busy'); }
 };
-run();
-setInterval(()=>{if(!document.hidden) run();},60000);
+let pollTimer;
+let resumeTimer;
+function scheduleRefresh() {
+  clearInterval(pollTimer);
+  clearTimeout(resumeTimer);
+  if(document.hidden) return;
+  resumeTimer=setTimeout(()=>run(),0);
+  pollTimer=setInterval(()=>{if(!document.hidden) run();},60000);
+}
+document.addEventListener('visibilitychange',scheduleRefresh);
+window.addEventListener('pageshow',event=>{if(event.persisted) scheduleRefresh();});
+window.addEventListener('online',scheduleRefresh);
+scheduleRefresh();
 
 async function setupPush() {
   const enable=el('enable-push'), test=el('test-push'), status=el('push-status');
