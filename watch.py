@@ -4,6 +4,7 @@ import os
 import re
 import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
@@ -52,16 +53,41 @@ def catalogue(word):
             rows[url] = text
     return rows
 
-def arrivals():
-    result = requests.post('https://tools.mandarake.co.jp/tools/newArrivalItems/',
-                           json={'shop':1,'stock_only':True,'adult':False,'count':20},timeout=12)
-    result.raise_for_status()
+def arrivals(stock):
+    # The shop's own public widget runs on its Nakano pages and returns zaiko per item.
+    from playwright.sync_api import sync_playwright, Error as BrowserError
+    binary = os.environ.get('MARKET_CHROME') or shutil.which('google-chrome') or shutil.which('chromium')
+    endpoint = 'https://tools.mandarake.co.jp/tools/newArrivalItems/'
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(executable_path=binary)
+            tab = browser.new_page()
+            tab.route('**/*', lambda route: route.continue_() if route.request.is_navigation_request() or
+                      route.request.url == endpoint else route.abort())
+            tab.goto(SHOP,wait_until='domcontentloaded',timeout=25000)
+            if urlsplit(tab.url).hostname != 'www.mandarake.co.jp':
+                raise ValueError('Nakano widget page unavailable')
+            items = tab.evaluate("""async url=>{
+              const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({shop:1,adult:false,stock_only:false,count:100}),signal:AbortSignal.timeout(15000)});
+              if(!response.ok) throw Error('Nakano widget '+response.status);
+              const payload=await response.json();
+              if(payload.status!=='success' || !Array.isArray(payload.data)) throw Error('Invalid Nakano widget response');
+              return payload.data;
+            }""",endpoint)
+    except BrowserError as error:
+        raise ValueError('Nakano widget unavailable') from error
     rows = {}
-    for item in result.json()['data']:
+    for item in items:
         code = str(item.get('item_code',''))
-        if code.isdigit() and item.get('title'):
+        quantity = str(item.get('zaiko',''))
+        if str(item.get('shop'))!='1' or not code.isdigit() or not quantity.isdigit():
+            continue
+        url = DETAIL+code
+        stock[url] = int(quantity)>0
+        if stock[url] and item.get('title'):
             price = str(item.get('price','')).replace(',','')
-            rows[DETAIL+code] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
+            rows[url] = item['title'] + (f' ({int(price):,}円)' if price.isdigit() else '')
     return rows
 
 def article_items(article):
@@ -93,9 +119,7 @@ def article_items(article):
 def nakano(stock_feed=None):
     rows = {}
     try:
-        rows.update(arrivals())
-        if stock_feed is not None:
-            stock_feed.update(rows)
+        rows.update(arrivals(stock_feed if stock_feed is not None else {}))
     except (requests.RequestException,ValueError,KeyError):
         pass
     try:
@@ -149,7 +173,7 @@ def inspect_stock(row, stock_feed):
     if not re.fullmatch(re.escape(DETAIL)+r'[0-9]+',url):
         return observation
     if url in stock_feed:
-        observation['available']=True
+        observation['available']=stock_feed[url]
         return observation
     try:
         response = page(url)
@@ -166,7 +190,8 @@ def check_favorites(session,base,stock_feed):
     if not rows: return
     if stock_feed is None:
         try:
-            stock_feed=arrivals()
+            stock_feed={}
+            arrivals(stock_feed)
         except (requests.RequestException,ValueError,KeyError):
             stock_feed={}
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -204,7 +229,7 @@ async def run():
                 if feed is None:
                     stock_feed = {}
                     try:
-                        feed = nakano(stock_feed)
+                        feed = await asyncio.to_thread(nakano,stock_feed)
                     except requests.RequestException:
                         feed = []
                 combined = dict(feed)
@@ -242,7 +267,7 @@ async def run():
         except Exception as error:
             print(f"Watch {watch['id']}: {type(error).__name__}", flush=True)
             failed = True
-    check_favorites(session,base,stock_feed)
+    await asyncio.to_thread(check_favorites,session,base,stock_feed)
     if failed:
         raise SystemExit(1)
 
