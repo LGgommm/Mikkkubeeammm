@@ -261,7 +261,7 @@ function productList(id,rows,make,empty,signature) {
 }
 let watchSnapshot;
 let feedHits=[], feedSaved=new Set(), availableWords=[];
-const selectedShops=new Set(), selectedWords=new Set();
+const selectedShops=new Set(Object.keys(shops)), selectedWords=new Set();
 const auctionCards=new Map();
 function auctionCard(url) {
   const id=url.searchParams.get('index');
@@ -293,7 +293,21 @@ function choiceButtons(id,values,selected) {
   }
 }
 function showChoices(){
-  choiceButtons('filter-shops',Object.entries(shops),selectedShops);
+  const box=el('filter-shops');
+  if(!box.childElementCount) {
+    for(const label of el('shop-menu').querySelectorAll('label')) {
+      const copy=label.cloneNode(true);
+      const input=copy.querySelector('input');
+      input.removeAttribute('name');
+      input.onchange=()=>{
+        if(input.checked) selectedShops.add(input.value);
+        else selectedShops.delete(input.value);
+        renderFeed();
+      };
+      box.append(copy);
+    }
+  }
+  for(const input of box.querySelectorAll('input')) input.checked=selectedShops.has(input.value);
   choiceButtons('filter-words',availableWords.map(word=>[word,word]),selectedWords);
 }
 if(el('feed-filter')) {
@@ -303,7 +317,8 @@ el('filter-done').onclick=()=>{
   if(el('filter-min').reportValidity() && el('filter-max').reportValidity()) el('filter-dialog').close();
 };
 el('filter-reset').onclick=()=>{
-  selectedShops.clear();selectedWords.clear();
+  for(const shop of Object.keys(shops)) selectedShops.add(shop);
+  selectedWords.clear();
   el('filter-min').value=el('filter-max').value='';
   showChoices();renderFeed();
 };
@@ -323,10 +338,10 @@ function renderFeed(){
   const byPrice=Boolean(min && (min.value!=='' || max.value!==''));
   const inverted=byPrice && min.value!=='' && max.value!=='' && min.valueAsNumber>max.valueAsNumber;
   max?.setCustomValidity(inverted?'최고가는 최저가 이상으로 입력해 주세요.':'');
-  const active=Boolean(byPrice || selectedShops.size || selectedWords.size);
+  const active=Boolean(byPrice || selectedShops.size!==Object.keys(shops).length || selectedWords.size);
   el('feed-filter')?.classList.toggle('active',active);
   const unknown=[], hits=feedHits.filter(row=>{
-    if(selectedShops.size && !selectedShops.has(row.shop)) return false;
+    if(!selectedShops.has(row.shop)) return false;
     if(selectedWords.size && !selectedWords.has(row.keyword)) return false;
     if(!byPrice) return true;
     const amount=row.title.match(/([\d,]+)\s*円\)?$/);
