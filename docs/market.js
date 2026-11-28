@@ -252,6 +252,7 @@ function productList(id,rows,make,empty,signature) {
   list(id,rows,make,empty);
   productSnapshots.set(id,snapshot);
 }
+let watchSnapshot;
 let latestRefresh=0;
 async function refresh() {
   const request=++latestRefresh;
@@ -266,9 +267,11 @@ async function refresh() {
     if(!groups.has(watch.keyword)) groups.set(watch.keyword,[]);
     groups.get(watch.keyword).push(watch);
   }
-  if(!editing) {
+  const nextWatchSnapshot=JSON.stringify(watches);
+  if(!editing && watchSnapshot!==nextWatchSnapshot) {
     el('editor-parking').append(form);
     list('watches',Array.from(groups),watchCard,'등록한 키워드가 없어요.');
+    watchSnapshot=nextWatchSnapshot;
   }
   productList('hits',hits,r=>[product(r),button(saved.has(r.url)?'찜 해제':'찜',()=>api('/favorite',{url:r.url,add:!saved.has(r.url)}))],'첫 수집 이후 발견한 새 매물이 여기에 표시돼요.',hits.map(r=>[r.url,r.title,r.posted_at,r.found_at,saved.has(r.url)]));
   productList('stars',favorites,r=>[product(r),button('찜 해제',()=>api('/favorite',{url:r.url,add:false}))],'찜한 매물이 없어요.',favorites.map(r=>[r.url,r.title,r.posted_at,r.found_at]));
@@ -307,14 +310,20 @@ el('reload').onclick=async event=>{
   finally { control.disabled=false; control.removeAttribute('aria-busy'); }
 };
 let pollTimer;
-let resumeTimer;
+let pollGeneration=0;
 function scheduleRefresh() {
-  clearInterval(pollTimer);
-  clearTimeout(resumeTimer);
+  const generation=++pollGeneration;
+  clearTimeout(pollTimer);
   if(document.hidden) return;
-  resumeTimer=setTimeout(()=>run(),0);
-  pollTimer=setInterval(()=>{if(!document.hidden) run();},60000);
+  async function poll() {
+    await run();
+    if(generation===pollGeneration && !document.hidden) pollTimer=setTimeout(poll,10000);
+  }
+  pollTimer=setTimeout(poll,0);
 }
+navigator.serviceWorker?.addEventListener('message',event=>{
+  if(event.data?.type==='listing-added' && !document.hidden) scheduleRefresh();
+});
 document.addEventListener('visibilitychange',scheduleRefresh);
 window.addEventListener('pageshow',event=>{if(event.persisted) scheduleRefresh();});
 window.addEventListener('online',scheduleRefresh);
