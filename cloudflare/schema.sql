@@ -114,3 +114,10 @@ DROP TRIGGER IF EXISTS seed_favorite_stock;
 CREATE TABLE IF NOT EXISTS nakano_descriptions (
   url TEXT PRIMARY KEY, description TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS mercari_descriptions (
+  url TEXT PRIMARY KEY, description TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mercari_description_jobs (
+  url TEXT PRIMARY KEY, retry_at INTEGER NOT NULL DEFAULT 0
+);

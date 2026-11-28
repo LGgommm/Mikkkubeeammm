@@ -117,21 +117,25 @@ async function describeListing(req,env,ctx,product,stored) {
   const cached=await caches.default.match(cacheRequest);
   if(cached) return reply(await cached.json());
 
-  let description='', sourceStatus='unavailable';
-  try {
-    const source=await fetch(product.url,{redirect:'manual',signal:AbortSignal.timeout(6000),cf:{cacheTtl:180,cacheEverything:true}});
-    sourceStatus=String(source.status);
-    if(source.ok) description=await productDescription(source);
-  } catch (error) {sourceStatus=error.name;}
-  description=(description || stored?.description || '').trim();
-  if(!description) return reply({description:'',translated:false,sourceStatus});
+  let description=stored?.description || '';
+  if(!description) {
+    try {
+      const source=await fetch(product.url,{redirect:'manual',signal:AbortSignal.timeout(6000),cf:{cacheTtl:180,cacheEverything:true}});
+      if(source.ok) description=await productDescription(source);
+    } catch { /* Store pages can be temporarily unavailable. */ }
+  }
+  description=description.trim();
+  if(!description) {
+    const pending=product.url.startsWith('https://jp.mercari.com/item/');
+    if(pending) await env.DB.prepare('INSERT OR IGNORE INTO mercari_description_jobs(url) VALUES(?)').bind(product.url).run();
+    return reply({description:'',translated:false,pending});
+  }
   const shortened=description.length>4000;
   description=description.slice(0,4000);
 
   const japanese=/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(description);
   const korean=/\p{Script=Hangul}/u.test(description);
   const latin=/[A-Za-z]/.test(description);
-  let translationStatus='unavailable';
   let translated=!japanese && (korean || !latin);
   if(!translated && env.AI) {
     try {
@@ -146,9 +150,9 @@ async function describeListing(req,env,ctx,product,stored) {
         }).join('').trim();
         translated=true;
       }
-    } catch(error) {translationStatus=error.name;}
+    } catch { /* Show the source text while translation is unavailable. */ }
   }
-  const result={description,translated,shortened,...(!translated?{translationStatus}:{})};
+  const result={description,translated,shortened};
   if(translated) ctx.waitUntil(caches.default.put(cacheRequest,new Response(JSON.stringify(result),{
     headers:{'Content-Type':'application/json','Cache-Control':'max-age=21600'}
   })));
@@ -294,6 +298,37 @@ export default {async fetch(req, env, ctx) {
     if (path === '/collector/watches' && req.method === 'GET') await drain(env.DB);
     if (path === '/collector/watches' && req.method === 'GET')
       return reply((await env.DB.prepare('SELECT w.id,w.shop,w.keyword,p.min_yen,p.max_yen,k.min_krw,k.max_krw FROM watches w LEFT JOIN keyword_prices p USING(owner,keyword) LEFT JOIN keyword_prices_krw k USING(owner,keyword) WHERE active=1').all()).results);
+    if (path === '/collector/mercari-descriptions' && req.method==='GET') {
+      const result=await sql(`SELECT url FROM (
+        SELECT j.url,0 AS priority,j.retry_at AS weight FROM mercari_description_jobs j
+        WHERE j.retry_at<=unixepoch()
+        UNION ALL
+        SELECT m.url,1,-MAX(m.found_at) FROM matches m JOIN watches w ON w.id=m.watch_id
+        WHERE w.shop='mercari' AND m.visible=1 AND m.found_at>=unixepoch()-86400
+          AND NOT EXISTS(SELECT 1 FROM mercari_description_jobs j WHERE j.url=m.url)
+          AND NOT EXISTS(SELECT 1 FROM mercari_descriptions d WHERE d.url=m.url)
+        GROUP BY m.url
+      ) ORDER BY priority,weight,url LIMIT 6`).all();
+      return reply(result.results.map(row=>row.url));
+    }
+    if (path === '/collector/mercari-descriptions' && req.method==='POST') {
+      const {items}=await req.json();
+      if(!Array.isArray(items) || items.length>6) return reply({},400);
+      const statements=[];
+      for(const item of items) {
+        if(!/^https:\/\/jp\.mercari\.com\/item\/m\d+$/.test(item.url) ||
+           (item.description!==null && typeof item.description!=='string')) return reply({},400);
+        const description=item.description?.trim().slice(0,6000);
+        if(description) {
+          statements.push(sql('INSERT INTO mercari_descriptions(url,description) VALUES(?,?) ON CONFLICT(url) DO UPDATE SET description=excluded.description',item.url,description));
+          statements.push(sql('DELETE FROM mercari_description_jobs WHERE url=?',item.url));
+        } else {
+          statements.push(sql('INSERT INTO mercari_description_jobs(url,retry_at) VALUES(?,unixepoch()+3600) ON CONFLICT(url) DO UPDATE SET retry_at=excluded.retry_at',item.url));
+        }
+      }
+      if(statements.length) await env.DB.batch(statements);
+      return reply({});
+    }
     if (path === '/collector/results' && req.method === 'POST') {
       const {id,rows,posted={},catalogue={}} = await req.json();
       if (!Array.isArray(rows)) return reply({},400);
@@ -352,7 +387,7 @@ export default {async fetch(req, env, ctx) {
     if(!product) return reply({},400);
     const saved=await sql('SELECT 1 FROM favorites WHERE owner=? AND url=? UNION ALL SELECT 1 FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,product.url,owner,product.url).first();
     if(!saved) return reply({},404);
-    const stored=await sql('SELECT description FROM nakano_descriptions WHERE url=?',product.url).first();
+    const stored=await sql('SELECT description FROM nakano_descriptions WHERE url=? UNION ALL SELECT description FROM mercari_descriptions WHERE url=? LIMIT 1',product.url,product.url).first();
     return describeListing(req,env,ctx,product,stored);
   }
   if (path === '/auction-card' && req.method === 'GET') {
