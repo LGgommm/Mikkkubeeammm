@@ -36,7 +36,7 @@ db = next((d for d in api("d1/database?name="+name) if d["name"]==name),None)
 if not db:
     db = api("d1/database","POST",{"name":name})
 config = Path("cloudflare/wrangler.json")
-config.write_text(json.dumps({"name":name,"main":"worker.mjs","compatibility_date":"2025-06-01","workers_dev":True,"d1_databases":[{"binding":"DB","database_name":name,"database_id":db["uuid"]}]}))
+config.write_text(json.dumps({"name":name,"main":"worker.mjs","compatibility_date":"2025-06-01","workers_dev":True,"ai":{"binding":"AI"},"d1_databases":[{"binding":"DB","database_name":name,"database_id":db["uuid"]}]}))
 def wrangler(*args, data=None):
     subprocess.run(["npx","--yes","wrangler@4",*args,"--config",str(config)],input=data,text=True,check=True)
 wrangler("d1","execute",name,"--remote","--file","cloudflare/schema.sql")

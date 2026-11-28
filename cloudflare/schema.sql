@@ -110,3 +110,7 @@ CREATE TABLE IF NOT EXISTS nakano_catalogue (
   url TEXT PRIMARY KEY, available INTEGER NOT NULL, image TEXT NOT NULL
 );
 DROP TRIGGER IF EXISTS seed_favorite_stock;
+
+CREATE TABLE IF NOT EXISTS nakano_descriptions (
+  url TEXT PRIMARY KEY, description TEXT NOT NULL
+);

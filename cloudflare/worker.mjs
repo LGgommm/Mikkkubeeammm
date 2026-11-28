@@ -62,6 +62,97 @@ function favoriteProduct(value) {
   const label=catalogue?'만다라케 상품 ':'만다라케 경매 ';
   return {url:url.origin+url.pathname+'?'+param+'='+id,label:label+id};
 }
+function productDescription(response) {
+  let pageText='', json='';
+  let structured='';
+  const capture={
+    text(chunk){pageText+=chunk.text;}
+  };
+  const parser=new HTMLRewriter()
+    .on('[data-testid="description"], .item_description',capture)
+    .on('.item_description br, .item_description tr', {
+      element(tag) {
+        if(tag.tagName==='br') pageText+='\n';
+        else tag.onEndTag(()=>{pageText+='\n';});
+      }
+    })
+    .on('script[type="application/ld+json"]', {
+      text(chunk){
+        json+=chunk.text;
+        if(!chunk.lastInTextNode) return;
+        try {
+          const value=JSON.parse(json);
+          const nodes=[value,...(Array.isArray(value)?value:value?.['@graph'] || [])];
+          const item=nodes.find(node=>node?.['@type']==='Product' && typeof node.description==='string');
+          if(item) structured=item.description;
+        } catch { /* A listing can contain unrelated structured data. */ }
+        json='';
+      }
+    });
+  return parser.transform(response).arrayBuffer().then(()=>
+    (structured || pageText.replace(/^\s*商品説明\s*/, '')).replace(/[\t ]+/g,' ').replace(/\n\s*\n\s*\n/g,'\n\n').trim()
+  );
+}
+
+function descriptionChunks(text) {
+  const parts=text.match(/[^。！？\n]+[。！？]*|[。！？\n]+/gu) || [text];
+  const chunks=[];
+  let current='';
+  for(const part of parts) {
+    if(current.length+part.length>300 && current.trim()) {
+      chunks.push(current);current='';
+    }
+    const chars=Array.from(part);
+    while(chars.length>300) chunks.push(chars.splice(0,300).join(''));
+    current+=chars.join('');
+  }
+  if(current.trim()) chunks.push(current);
+  return chunks;
+}
+
+async function describeListing(req,env,ctx,product,stored) {
+  const cacheKey=new URL('/listing-details-cache-v1',req.url);
+  cacheKey.searchParams.set('url',product.url);
+  const cacheRequest=new Request(cacheKey);
+  const cached=await caches.default.match(cacheRequest);
+  if(cached) return reply(await cached.json());
+
+  let description='';
+  try {
+    const source=await fetch(product.url,{redirect:'error',signal:AbortSignal.timeout(6000)});
+    if(source.ok && source.headers.get('Content-Type')?.includes('text/html')) description=await productDescription(source);
+  } catch { /* Some stock pages are available only through the store catalogue. */ }
+  description=(description || stored?.description || '').trim();
+  if(!description) return reply({description:'',translated:false});
+  const shortened=description.length>4000;
+  description=description.slice(0,4000);
+
+  const japanese=/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(description);
+  const korean=/\p{Script=Hangul}/u.test(description);
+  const latin=/[A-Za-z]/.test(description);
+  let translated=!japanese && (korean || !latin);
+  if(!translated && env.AI) {
+    try {
+      const chunks=descriptionChunks(description);
+      const results=await Promise.all(chunks.map(text=>env.AI.run('@cf/meta/m2m100-1.2b',{
+        text:text.trim(),source_lang:japanese?'ja':'en',target_lang:'ko'
+      })));
+      if(results.every(result=>result.translated_text?.trim())) {
+        description=results.map((result,i)=>{
+          const newline=chunks[i].endsWith('\n');
+          return result.translated_text.trim()+(newline?'\n':' ');
+        }).join('').trim();
+        translated=true;
+      }
+    } catch { /* Keep the published description readable if translation is temporarily unavailable. */ }
+  }
+  const result={description,translated,shortened};
+  if(translated) ctx.waitUntil(caches.default.put(cacheRequest,new Response(JSON.stringify(result),{
+    headers:{'Content-Type':'application/json','Cache-Control':'max-age=21600'}
+  })));
+  return reply(result);
+}
+
 async function favoritePageTitle(product) {
   try {
     const response=await fetch(product.url,{redirect:'error',signal:AbortSignal.timeout(5000)});
@@ -162,7 +253,7 @@ function reply(data, status = 200) {
     'Cache-Control':'no-store'
   }});
 }
-export default {async fetch(req, env) {
+export default {async fetch(req, env, ctx) {
   if (req.method === 'OPTIONS') return reply({});
   const path = new URL(req.url).pathname;
   const key = (req.headers.get('Authorization') || '').replace(/^Bearer /,'');
@@ -212,7 +303,11 @@ export default {async fetch(req, env) {
         const card=catalogue[url];
         if(typeof card?.available!=='boolean' || !/^https:\/\/order\.mandarake\.co\.jp\/order\/detailPage\/item\?itemCode=\d+$/.test(url)) return [];
         const image=typeof card.image==='string' && card.image.startsWith('https://img.mandarake.co.jp/') ? card.image : '';
-        return [sql('INSERT INTO nakano_catalogue(url,available,image) VALUES(?,?,?) ON CONFLICT(url) DO UPDATE SET available=excluded.available,image=excluded.image',url,Number(card.available),image)];
+        const statements=[sql('INSERT INTO nakano_catalogue(url,available,image) VALUES(?,?,?) ON CONFLICT(url) DO UPDATE SET available=excluded.available,image=excluded.image',url,Number(card.available),image)];
+        if(typeof card.description==='string' && card.description.trim()) {
+          statements.push(sql('INSERT INTO nakano_descriptions(url,description) VALUES(?,?) ON CONFLICT(url) DO UPDATE SET description=excluded.description WHERE description<>excluded.description',url,card.description.trim().slice(0,6000)));
+        }
+        return statements;
       });
       const times=rows.filter(([url])=>Number.isSafeInteger(posted[url]) && posted[url]>0 && posted[url]<=Date.now()/1000)
         .map(([url])=>sql('INSERT OR IGNORE INTO listing_times(url,posted_at) VALUES(?,?)',url,posted[url]));
@@ -249,6 +344,14 @@ export default {async fetch(req, env) {
       } catch(e) {return reply({accepted:false,stage:'prepare',error:e.name});}
     }
     return reply({},404);
+  }
+  if(path==='/listing-details' && req.method==='GET') {
+    const product=favoriteProduct(new URL(req.url).searchParams.get('url'));
+    if(!product) return reply({},400);
+    const saved=await sql('SELECT 1 FROM favorites WHERE owner=? AND url=? UNION ALL SELECT 1 FROM matches m JOIN watches w ON w.id=m.watch_id WHERE w.owner=? AND m.url=? AND m.visible>0 LIMIT 1',owner,product.url,owner,product.url).first();
+    if(!saved) return reply({},404);
+    const stored=await sql('SELECT description FROM nakano_descriptions WHERE url=?',product.url).first();
+    return describeListing(req,env,ctx,product,stored);
   }
   if (path === '/auction-card' && req.method === 'GET') {
     const id = new URL(req.url).searchParams.get('id');
