@@ -11,9 +11,9 @@ const backupKey=document.cookie.split('; ').find(part=>part.startsWith('market_d
 let key=validDeviceKey(storedKey) ? storedKey : backupKey;
 if(!validDeviceKey(key)) key=Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,'0')).join('');
 saveDeviceKey(key);
-async function api(path, body) {
+async function api(path, body, signal) {
   if (!window.MARKET_API) throw Error('알림 서비스 배포를 기다리고 있어요.');
-  const response = await fetch(window.MARKET_API + path,{cache:'no-store',method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
+  const response = await fetch(window.MARKET_API + path,{signal,cache:'no-store',method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:body && JSON.stringify(body)});
   if (!response.ok) throw Error('요청을 처리하지 못했어요 ('+response.status+').');
   return response.json();
 }
@@ -364,8 +364,14 @@ let latestRefresh=0;
 async function refresh() {
   const request=++latestRefresh;
   let state;
-  try {state=await api('/state');}
-  catch(error) {if(request===latestRefresh) throw error; return;}
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try {state=await api('/state',undefined,controller.signal);}
+  catch(error) {
+    if(request!==latestRefresh) return;
+    if(controller.signal.aborted) throw Error('목록 응답이 늦어 다시 확인할게요.');
+    throw error;
+  } finally {clearTimeout(timeout);}
   if(request!==latestRefresh) return;
   const {watches,hits,favorites}=state;
   const saved=new Set(favorites.map(row=>row.url));
