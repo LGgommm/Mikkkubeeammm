@@ -35,7 +35,8 @@ function updateListingAge(time) {
 }
 const expandedProducts=new Set();
 const reduceListingMotion=matchMedia('(prefers-reduced-motion: reduce)');
-const listingTransition={duration:320,easing:'cubic-bezier(.2,.72,.3,1)'};
+const listingTransition={duration:420,easing:'cubic-bezier(.25,.65,.35,1)'};
+const descriptionTransition={duration:200,easing:'ease-out'};
 const productDetails=new Map();
 function listingDetails(url,original=false) {
   const key=url+(original?' original':' translation');
@@ -111,43 +112,72 @@ function product(row,listId) {
   layout.append(toggle,thumb,title,a,price,source,description);
   card.append(layout);
 
-  let heightAnimation, movements=[];
-  function animateLayout(update,moveContents=false) {
-    if(reduceListingMotion.matches || !card.getClientRects().length) {
-      heightAnimation?.cancel();
-      movements.forEach(animation=>animation.cancel());
-      card.classList.remove('animating');
-      update();
-      return;
+  let heightAnimation, movements=[], pendingDescription;
+  function setDescription(update) {
+    if(card.classList.contains('animating')) {
+      const previous=pendingDescription;
+      pendingDescription=()=>{
+        previous?.();
+        update();
+      };
+    } else {
+      animateLayout(update);
     }
+  }
+  function finishLayout() {
+    card.classList.remove('animating');
+    const update=pendingDescription;
+    pendingDescription=undefined;
+    if(update) animateLayout(update);
+  }
+
+  function animateLayout(update,moveContents=false) {
     const image=thumb.querySelector('img');
-    const targets=moveContents ? [image?.naturalWidth ? image : null,title,price,source].filter(Boolean) : [];
+    const canAnimate=!reduceListingMotion.matches && card.getClientRects().length>0;
+    const targets=canAnimate && moveContents
+      ? [image?.naturalWidth ? image : null,title,price,source].filter(Boolean)
+      : [];
     const positions=targets.map(element=>element.getBoundingClientRect());
-    const fromHeight=card.getBoundingClientRect().height;
+    const fromHeight=canAnimate ? card.offsetHeight : 0;
+
     heightAnimation?.cancel();
-    if(moveContents) {
+    heightAnimation=undefined;
+    if(moveContents || !canAnimate) {
       movements.forEach(animation=>animation.cancel());
       movements=[];
     }
     update();
+    if(!canAnimate) {
+      finishLayout();
+      return;
+    }
+
     const toHeight=layout.getBoundingClientRect().height;
+    const endPositions=targets.map(element=>element.getBoundingClientRect());
     if(Math.abs(fromHeight-toHeight)>1) {
       card.classList.add('animating');
-      const animation=card.animate([{height:fromHeight+'px'},{height:toHeight+'px'}],listingTransition);
+      const animation=card.animate(
+        [{height:fromHeight+'px'},{height:toHeight+'px'}],
+        moveContents ? listingTransition : descriptionTransition
+      );
       heightAnimation=animation;
       animation.onfinish=()=>{
-        if(heightAnimation===animation) card.classList.remove('animating');
+        if(heightAnimation===animation) {
+          heightAnimation=undefined;
+          finishLayout();
+        }
       };
     } else {
-      card.classList.remove('animating');
+      finishLayout();
     }
+
     for(const [index,element] of targets.entries()) {
-      const before=positions[index],after=element.getBoundingClientRect();
+      const before=positions[index],after=endPositions[index];
       if(!after.width || !after.height) continue;
       const dx=before.left-after.left,dy=before.top-after.top;
       const scale=element===image ? ` scale(${before.width/after.width},${before.height/after.height})` : '';
       movements.push(element.animate([
-        {transformOrigin:'top left',transform:`translate(${dx}px,${dy}px)${scale}`},
+        {transformOrigin:'top left',transform:`translate3d(${dx}px,${dy}px,0)${scale}`},
         {transformOrigin:'top left',transform:'none'}
       ],listingTransition));
     }
@@ -166,14 +196,14 @@ function product(row,listId) {
     heading.textContent='상품 설명';
     text.textContent='상품 설명 불러오는 중…';
     function showDescription(detail) {
-      animateLayout(()=>{
-        heading.textContent=detail.translated?'상품 설명':'상품 설명 (원문)';
+      setDescription(()=>{
+        heading.textContent=detail.needsTranslation?'상품 설명 (번역 중)':detail.translated?'상품 설명':'상품 설명 (원문)';
         text.textContent=detail.description+(detail.shortened?'\n\n나머지 설명은 원본 페이지에서 확인해 주세요.':'');
       });
     }
     listingDetails(row.url,true).then(async detail=>{
       if(!detail.description) {
-        animateLayout(()=>{
+        setDescription(()=>{
           text.textContent=detail.pending?'상품 설명을 확인하고 있어요. 잠시 후 자동으로 다시 확인해요.':'원본 페이지에서 상품 설명을 확인해 주세요.';
         });
         if(detail.pending && card.classList.contains('expanded')) {
@@ -185,11 +215,10 @@ function product(row,listId) {
       }
       showDescription(detail);
       if(!detail.needsTranslation) return;
-      heading.textContent='상품 설명 (번역 중)';
       try {showDescription(await listingDetails(row.url));}
-      catch {heading.textContent='상품 설명 (원문)';}
+      catch {setDescription(()=>{heading.textContent='상품 설명 (원문)';});}
     }).catch(()=>{
-      animateLayout(()=>{
+      setDescription(()=>{
         text.textContent='설명을 불러오지 못했어요. 카드를 접었다 다시 열면 재시도해요.';
       });
     }).finally(()=>{loading=false;});
@@ -394,9 +423,16 @@ function watchCard([keyword, rows]) {
   return [logos,name,toggle,remove,options,panel];
 }
 const productSnapshots=new Map();
+const pendingProductRenders=new Map();
 function productList(id,rows,make,empty,signature) {
+  clearTimeout(pendingProductRenders.get(id));
+  pendingProductRenders.delete(id);
   const snapshot=JSON.stringify(signature);
   if(productSnapshots.get(id)===snapshot) return;
+  if(el(id).querySelector('.listing-card.animating')) {
+    pendingProductRenders.set(id,setTimeout(()=>productList(id,rows,make,empty,signature),80));
+    return;
+  }
   list(id,rows,make,empty);
   productSnapshots.set(id,snapshot);
 }
